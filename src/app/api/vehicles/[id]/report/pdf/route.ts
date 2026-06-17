@@ -3,7 +3,7 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf
 import { requireVehicle, currentMileage } from "@/lib/vehicles";
 import { prisma } from "@/lib/prisma";
 import {
-  MAINTENANCE_TYPE_LABELS,
+  maintenanceTypeLabel,
   DOCUMENT_TYPE_LABELS,
   FUEL_TYPE_LABELS,
 } from "@/lib/labels";
@@ -142,7 +142,7 @@ export async function GET(
       ensureSpace(16);
       text(D(m.performedAt), margin, 9, font, gray);
       text(
-        (m.title || MAINTENANCE_TYPE_LABELS[m.type]).slice(0, 50),
+        (m.title || maintenanceTypeLabel(m)).slice(0, 50),
         120,
         9,
         font

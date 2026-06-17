@@ -13,6 +13,8 @@ import {
 import {
   MAINTENANCE_TYPE_LABELS,
   MAINTENANCE_TYPE_ICON,
+  maintenanceTypeKeys,
+  maintenanceTypeLabel,
 } from "@/lib/labels";
 import { MAINTENANCE_DISCLAIMER } from "@/lib/maintenance-intervals";
 import { formatDate, formatMileage, formatEuro } from "@/lib/format";
@@ -25,22 +27,34 @@ function MaintenanceFields({
   services: { id: string; name: string; brand: string | null; city: string | null }[];
   m?: Maintenance;
 }) {
+  const checked = new Set(m ? maintenanceTypeKeys(m) : ["VIDANGE"]);
   return (
     <>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="label">Type</label>
-          <select name="type" className="input" defaultValue={m?.type ?? "VIDANGE"}>
-            {Object.entries(MAINTENANCE_TYPE_LABELS).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="label">Date</label>
-          <TodayDateInput name="performedAt" iso={m?.performedAt.toISOString()} />
+      <div>
+        <label className="label">Date</label>
+        <TodayDateInput name="performedAt" iso={m?.performedAt.toISOString()} />
+      </div>
+      <div>
+        <label className="label">
+          Type(s) — cochez tout ce qui a été fait
+        </label>
+        <div className="max-h-44 space-y-0.5 overflow-y-auto rounded-lg border border-gray-300 p-2">
+          {Object.entries(MAINTENANCE_TYPE_LABELS).map(([k, v]) => (
+            <label
+              key={k}
+              className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-gray-50"
+            >
+              <input
+                type="checkbox"
+                name="types"
+                value={k}
+                defaultChecked={checked.has(k)}
+              />
+              <span>
+                {MAINTENANCE_TYPE_ICON[k]} {v}
+              </span>
+            </label>
+          ))}
         </div>
       </div>
       <div>
@@ -158,11 +172,14 @@ export default async function MaintenancePage({
         )}
         {items.map((m) => (
           <div key={m.id} className="card flex items-center gap-3 py-3">
-            <span className="text-xl">{MAINTENANCE_TYPE_ICON[m.type]}</span>
+            <span className="text-xl">
+              {MAINTENANCE_TYPE_ICON[maintenanceTypeKeys(m)[0]] ?? "🔧"}
+            </span>
             <div className="flex-1">
-              <p className="font-medium">
-                {m.title || MAINTENANCE_TYPE_LABELS[m.type]}
-              </p>
+              <p className="font-medium">{maintenanceTypeLabel(m)}</p>
+              {m.title && (
+                <p className="text-xs text-gray-500">{m.title}</p>
+              )}
               <p className="text-xs text-gray-400">
                 {formatDate(m.performedAt)}
                 {m.mileage ? ` · ${formatMileage(m.mileage)}` : ""}

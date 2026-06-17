@@ -75,13 +75,32 @@ async function rememberService(garageId: string, name: string | null) {
 
 // --- Entretiens ---
 
+const MAINT_TYPE_VALUES = new Set(Object.values(MaintenanceType));
+/**
+ * Lit la multi-sélection de types (cases à cocher `types`). Renvoie le type
+ * principal (1er coché, pour compatibilité) et la liste CSV de tous les types.
+ */
+function maintenanceTypes(formData: FormData): {
+  type: MaintenanceType;
+  types: string;
+} {
+  const selected = formData
+    .getAll("types")
+    .map((v) => String(v))
+    .filter((v) => MAINT_TYPE_VALUES.has(v as MaintenanceType));
+  if (selected.length === 0) selected.push(MaintenanceType.REVISION);
+  return { type: selected[0] as MaintenanceType, types: selected.join(",") };
+}
+
 export async function addMaintenance(vehicleId: string, formData: FormData) {
   const vehicle = await guard(vehicleId);
   const serviceName = optStr(formData.get("serviceName"));
+  const mt = maintenanceTypes(formData);
   await prisma.maintenance.create({
     data: {
       vehicleId,
-      type: enumVal(MaintenanceType, formData.get("type"), MaintenanceType.REVISION),
+      type: mt.type,
+      types: mt.types,
       title: optStr(formData.get("title")),
       performedAt: reqDate(formData.get("performedAt")),
       mileage: optInt(formData.get("mileage")),
@@ -103,10 +122,12 @@ export async function updateMaintenance(
 ) {
   const vehicle = await guard(vehicleId);
   const serviceName = optStr(formData.get("serviceName"));
+  const mt = maintenanceTypes(formData);
   await prisma.maintenance.updateMany({
     where: { id, vehicleId },
     data: {
-      type: enumVal(MaintenanceType, formData.get("type"), MaintenanceType.REVISION),
+      type: mt.type,
+      types: mt.types,
       title: optStr(formData.get("title")),
       performedAt: reqDate(formData.get("performedAt")),
       mileage: optInt(formData.get("mileage")),

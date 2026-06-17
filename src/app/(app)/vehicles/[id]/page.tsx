@@ -3,8 +3,9 @@ import { requireVehicle, currentMileage } from "@/lib/vehicles";
 import { prisma } from "@/lib/prisma";
 import {
   FUEL_TYPE_LABELS,
-  MAINTENANCE_TYPE_LABELS,
   MAINTENANCE_TYPE_ICON,
+  maintenanceTypeKeys,
+  maintenanceTypeLabel,
   DOCUMENT_TYPE_LABELS,
   REMINDER_KIND_LABELS,
   dueStatus,
@@ -184,10 +185,12 @@ export default async function VehicleOverviewPage({
         </div>
         {lastMaint ? (
           <div className="card flex items-center gap-3">
-            <span className="text-xl">{MAINTENANCE_TYPE_ICON[lastMaint.type]}</span>
+            <span className="text-xl">
+              {MAINTENANCE_TYPE_ICON[maintenanceTypeKeys(lastMaint)[0]] ?? "🔧"}
+            </span>
             <div className="flex-1">
               <p className="font-medium">
-                {lastMaint.title || MAINTENANCE_TYPE_LABELS[lastMaint.type]}
+                {lastMaint.title || maintenanceTypeLabel(lastMaint)}
               </p>
               <p className="text-xs text-gray-400">
                 {formatDate(lastMaint.performedAt)}

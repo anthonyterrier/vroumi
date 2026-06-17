@@ -75,6 +75,27 @@ export const MAINTENANCE_TYPE_ICON: Record<string, string> = {
   AUTRE: "🔧",
 };
 
+/** Liste des clés de type d'un entretien (multi-sélection via `types`, repli sur `type`). */
+export function maintenanceTypeKeys(m: {
+  type: string;
+  types?: string | null;
+}): string[] {
+  const raw =
+    m.types && m.types.trim() ? m.types.split(",").map((s) => s.trim()) : [];
+  const keys = raw.filter((k) => k in MAINTENANCE_TYPE_LABELS);
+  return keys.length > 0 ? keys : [m.type];
+}
+
+/** Libellé lisible des types d'un entretien : "Vidange, Filtre à huile". */
+export function maintenanceTypeLabel(m: {
+  type: string;
+  types?: string | null;
+}): string {
+  return maintenanceTypeKeys(m)
+    .map((k) => MAINTENANCE_TYPE_LABELS[k] ?? k)
+    .join(", ");
+}
+
 export type DueStatus = "ok" | "soon" | "overdue" | "unknown";
 
 export const DUE_STATUS_STYLE: Record<

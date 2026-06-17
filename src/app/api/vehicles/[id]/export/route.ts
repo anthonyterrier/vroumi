@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireVehicle } from "@/lib/vehicles";
 import { prisma } from "@/lib/prisma";
 import {
-  MAINTENANCE_TYPE_LABELS,
+  maintenanceTypeLabel,
   DOCUMENT_TYPE_LABELS,
 } from "@/lib/labels";
 import { format } from "date-fns";
@@ -58,7 +58,7 @@ export async function GET(
       row([
         "Entretien",
         d(m.performedAt),
-        m.title || MAINTENANCE_TYPE_LABELS[m.type],
+        m.title ? `${maintenanceTypeLabel(m)} — ${m.title}` : maintenanceTypeLabel(m),
         m.mileage ?? "",
         m.cost ?? "",
         [m.serviceName, m.notes].filter(Boolean).join(" — "),
