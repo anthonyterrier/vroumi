@@ -1,4 +1,5 @@
 import { SubmitButton } from "@/components/SubmitButton";
+import { VehicleLookup } from "@/components/VehicleLookup";
 import {
   FUEL_TYPE_LABELS,
   VEHICLE_CATEGORY_LABELS,
@@ -150,6 +151,8 @@ export function VehicleForm({
           />
         </div>
       </div>
+
+      <VehicleLookup />
 
       <div className="grid grid-cols-2 gap-3">
         <div>
