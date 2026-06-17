@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 #
-# Installe Caddy en reverse proxy devant Carnet Auto, avec HTTPS automatique
+# Installe Caddy en reverse proxy devant Vroumi, avec HTTPS automatique
 # (certificat Let's Encrypt gratuit, renouvelé tout seul). Ton mot de passe
 # circule alors chiffré : indispensable si l'app est accessible depuis
 # internet via un nom de domaine (ex. DuckDNS).
 #
-#   Internet ──► Box (ports 80+443) ──► Caddy (HTTPS) ──► Carnet Auto :3000
+#   Internet ──► Box (ports 80+443) ──► Caddy (HTTPS) ──► Vroumi :3000
 #
 # Prérequis :
-#   - Carnet Auto installé et lancé (port 3000),
+#   - Vroumi installé et lancé (port 3000),
 #   - un nom de domaine qui pointe vers ta box (voir scripts/setup-duckdns.sh),
 #   - sur la box : rediriger les ports TCP 80 ET 443 vers le Pi.
 #
 # Usage :
 #   sudo bash scripts/setup-https-caddy.sh <domaine>
 # Exemple :
-#   sudo bash scripts/setup-https-caddy.sh carnet-anthony.duckdns.org
+#   sudo bash scripts/setup-https-caddy.sh vroumi-anthony.duckdns.org
 #
 set -euo pipefail
 
@@ -27,7 +27,7 @@ fi
 DOMAIN="${1:-}"
 if [ -z "$DOMAIN" ]; then
   echo "Usage : sudo bash scripts/setup-https-caddy.sh <domaine>"
-  echo "Exemple : sudo bash scripts/setup-https-caddy.sh carnet-anthony.duckdns.org"
+  echo "Exemple : sudo bash scripts/setup-https-caddy.sh vroumi-anthony.duckdns.org"
   exit 1
 fi
 
@@ -51,7 +51,7 @@ fi
 # --- Configuration : reverse proxy + HTTPS auto -----------------------------
 echo "📝 Écriture du Caddyfile (/etc/caddy/Caddyfile)…"
 cat > /etc/caddy/Caddyfile <<EOF
-# Carnet Auto — HTTPS automatique (Let's Encrypt) + reverse proxy vers l'app.
+# Vroumi — HTTPS automatique (Let's Encrypt) + reverse proxy vers l'app.
 $DOMAIN {
 	encode gzip
 	reverse_proxy $UPSTREAM
@@ -69,7 +69,7 @@ echo "   (les ports 80 ET 443 doivent être redirigés vers le Pi sur la box)."
 echo ""
 echo "🔐 Pense à activer le cookie sécurisé dans .env :"
 echo "      COOKIE_SECURE=true"
-echo "   puis :  sudo systemctl restart carnet"
+echo "   puis :  sudo systemctl restart vroumi"
 echo ""
 echo "🌐 Une fois fait, ouvre :  https://$DOMAIN"
 echo ""

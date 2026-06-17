@@ -1,6 +1,6 @@
-# Héberger Carnet Auto sur un Raspberry Pi
+# Héberger Vroumi sur un Raspberry Pi
 
-Guide pour faire tourner Carnet Auto en permanence sur un Raspberry Pi (testé
+Guide pour faire tourner Vroumi en permanence sur un Raspberry Pi (testé
 sur Pi 4 / Pi 5, Raspberry Pi OS 64 bits). Vaut aussi pour tout serveur Linux.
 
 ## 1. Prérequis : Node.js 20+
@@ -15,12 +15,12 @@ node -v   # doit afficher v20.x ou plus
 
 ```bash
 cd ~
-git clone https://github.com/anthonyterrier/carnet-entretien-auto.git
-cd carnet-entretien-auto
+git clone https://github.com/anthonyterrier/vroumi.git
+cd vroumi
 ```
 
-> Le service et les scripts supposent le chemin `/home/pi/carnet-entretien-auto`.
-> Si vous clonez ailleurs, adaptez `deploy/carnet.service`.
+> Le service et les scripts supposent le chemin `/home/pi/vroumi`.
+> Si vous clonez ailleurs, adaptez `deploy/vroumi.service`.
 
 ## 3. Installer, configurer, builder (script tout-en-un)
 
@@ -39,12 +39,12 @@ npm run start        # http://<ip-du-pi>:3000
 ## 4. Lancer en permanence (service systemd)
 
 ```bash
-sudo cp deploy/carnet.service /etc/systemd/system/carnet.service
+sudo cp deploy/vroumi.service /etc/systemd/system/vroumi.service
 # Vérifiez User=, WorkingDirectory= et le chemin de npm (which npm) dans le fichier
 sudo systemctl daemon-reload
-sudo systemctl enable --now carnet
-sudo systemctl status carnet      # doit être "active (running)"
-journalctl -u carnet -f           # journaux en direct
+sudo systemctl enable --now vroumi
+sudo systemctl status vroumi      # doit être "active (running)"
+journalctl -u vroumi -f           # journaux en direct
 ```
 
 L'app redémarre automatiquement au boot et en cas de plantage.
@@ -58,7 +58,7 @@ Un timer systemd vérifie GitHub toutes les 2 min ; à chaque `git push` sur
 ```bash
 sudo bash scripts/setup-auto-deploy.sh
 # intervalle personnalisé : sudo INTERVAL=5min bash scripts/setup-auto-deploy.sh
-journalctl -u carnet-deploy -f    # suivre les déploiements
+journalctl -u vroumi-deploy -f    # suivre les déploiements
 ```
 
 **Pousser sur `main` = déployer.** ~2 min de délai.
@@ -66,10 +66,10 @@ journalctl -u carnet-deploy -f    # suivre les déploiements
 ## 6. Mettre à jour manuellement
 
 ```bash
-cd ~/carnet-entretien-auto
+cd ~/vroumi
 git pull
 bash scripts/setup-pi.sh
-sudo systemctl restart carnet
+sudo systemctl restart vroumi
 ```
 
 ## 7. Sauvegarde des données
@@ -77,7 +77,7 @@ sudo systemctl restart carnet
 Toutes les données sont dans un seul fichier SQLite :
 
 ```bash
-cp ~/carnet-entretien-auto/prisma/prod.db ~/sauvegardes/carnet-$(date +%F).db
+cp ~/vroumi/prisma/prod.db ~/sauvegardes/vroumi-$(date +%F).db
 ```
 
 ## 8. Pi à faible mémoire (1 Go)

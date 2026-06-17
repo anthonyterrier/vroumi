@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# Déploiement automatique de Carnet Auto.
+# Déploiement automatique de Vroumi.
 # Récupère la branche de déploiement (main) et, SI du nouveau code est
 # disponible, applique la base, rebuild et redémarre le service.
-# Lancé périodiquement par le timer systemd « carnet-deploy.timer ».
+# Lancé périodiquement par le timer systemd « vroumi-deploy.timer ».
 #
 # Quand rien n'a changé, le script s'arrête en quelques millisecondes
 # (simple comparaison de commits) : aucun rebuild inutile.
@@ -41,6 +41,6 @@ npm run db:push
 npm run build
 
 # Redémarrage du service applicatif (sudo sans mot de passe, cf. sudoers).
-sudo systemctl restart carnet
+sudo systemctl restart vroumi
 
 echo "[$(ts)] ✅ Déploiement terminé (${REMOTE:0:7})."

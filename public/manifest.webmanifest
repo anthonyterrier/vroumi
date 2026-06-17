@@ -1,6 +1,6 @@
 {
-  "name": "Carnet Auto",
-  "short_name": "Carnet Auto",
+  "name": "Vroumi",
+  "short_name": "Vroumi",
   "description": "Suivi d'entretien automobile",
   "start_url": "/dashboard",
   "display": "standalone",

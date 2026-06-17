@@ -1,11 +1,11 @@
-# CLAUDE.md — Contexte projet Carnet Auto
+# CLAUDE.md — Contexte projet Vroumi
 
 Guide pour toute instance de Claude Code travaillant sur ce dépôt. Lis-le avant
 de coder.
 
 ## En deux mots
 
-**Carnet Auto** est une application web de **suivi d'entretien automobile**
+**Vroumi** est une application web de **suivi d'entretien automobile**
 (entretiens, réparations, carburant, kilométrage, documents administratifs,
 coûts, rappels). Mobile-first, multi-utilisateurs par **garage**,
 auto-hébergeable.
@@ -21,7 +21,7 @@ auto-hébergeable.
 - **Prisma ORM** + **SQLite** (`dev.db` en local, `prod.db` en prod)
 - **Tailwind CSS** (classes maison : `.btn-primary`, `.btn-secondary`, `.card`, `.input`, `.label`, `.badge`)
 - **Recharts** (kilométrage, consommation, coûts)
-- **Auth maison** : JWT (`jose`, HS256) + `bcryptjs`, cookie httpOnly `carnet_session`
+- **Auth maison** : JWT (`jose`, HS256) + `bcryptjs`, cookie httpOnly `vroumi_session`
 - **Zod** (validation), **date-fns** (locale `fr`), **pdf-lib** (rapport PDF)
 
 ## Commandes
@@ -30,7 +30,7 @@ auto-hébergeable.
 npm install
 cp .env.example .env      # AUTH_SECRET (openssl rand -base64 32)
 npm run db:push           # applique le schéma Prisma
-npm run db:seed           # démo : demo@carnet-auto.app / demo1234
+npm run db:seed           # démo : demo@vroumi.app / demo1234
 npm run dev               # http://localhost:3000
 npm run build             # prisma generate && next build (vérifie les types)
 ```

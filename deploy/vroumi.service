@@ -1,17 +1,17 @@
-# Service systemd pour faire tourner Carnet Auto en permanence sur un Raspberry Pi.
+# Service systemd pour faire tourner Vroumi en permanence sur un Raspberry Pi.
 #
 # Installation :
 #   1. Adaptez WorkingDirectory, User et le chemin de npm si besoin (voir
 #      docs/RASPBERRY-PI.md).
-#   2. sudo cp deploy/carnet.service /etc/systemd/system/carnet.service
+#   2. sudo cp deploy/vroumi.service /etc/systemd/system/vroumi.service
 #   3. sudo systemctl daemon-reload
-#   4. sudo systemctl enable --now carnet
+#   4. sudo systemctl enable --now vroumi
 #
-# Suivi :     sudo systemctl status carnet
-# Journaux :  journalctl -u carnet -f
+# Suivi :     sudo systemctl status vroumi
+# Journaux :  journalctl -u vroumi -f
 
 [Unit]
-Description=Carnet Auto - suivi d'entretien automobile
+Description=Vroumi - suivi d'entretien automobile
 After=network-online.target
 Wants=network-online.target
 
@@ -23,10 +23,10 @@ User=pi
 Group=pi
 
 # Chemin ABSOLU du projet sur le Raspberry Pi.
-WorkingDirectory=/home/pi/carnet-entretien-auto
+WorkingDirectory=/home/pi/vroumi
 
 # Variables d'environnement (chargées depuis le fichier .env du projet).
-EnvironmentFile=/home/pi/carnet-entretien-auto/.env
+EnvironmentFile=/home/pi/vroumi/.env
 # Écoute sur toutes les interfaces réseau (accessible depuis le LAN) port 3000.
 Environment=NODE_ENV=production
 Environment=HOSTNAME=0.0.0.0

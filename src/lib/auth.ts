@@ -6,7 +6,7 @@ import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { prisma } from "@/lib/prisma";
 
-const COOKIE_NAME = "carnet_session";
+const COOKIE_NAME = "vroumi_session";
 const SESSION_DAYS = 30;
 
 function getSecret(): Uint8Array {

@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Carnet Auto — Suivi d'entretien automobile",
+  title: "Vroumi — Suivi d'entretien automobile",
   description:
     "Suivez les entretiens, réparations, pleins de carburant, coûts et échéances (contrôle technique, assurance) de vos véhicules.",
   manifest: "/manifest.webmanifest",

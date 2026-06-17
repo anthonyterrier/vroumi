@@ -1,4 +1,4 @@
-# Carnet Auto — Suivi d'entretien automobile
+# Vroumi — Suivi d'entretien automobile
 
 Application web **mobile-first** pour suivre l'entretien de vos véhicules :
 entretiens, réparations, pleins de carburant (avec calcul de consommation),
@@ -15,7 +15,7 @@ grise…), rappels et coûts. Multi-utilisateurs par **garage**, auto-hébergeab
 - **Prisma ORM** + **SQLite** (PostgreSQL possible en prod)
 - **Tailwind CSS** (classes maison `.btn-primary`, `.card`, `.input`, `.badge`…)
 - **Recharts** (kilométrage, consommation, coûts)
-- **Auth maison** : JWT (`jose`, HS256) + `bcryptjs`, cookie httpOnly `carnet_session`
+- **Auth maison** : JWT (`jose`, HS256) + `bcryptjs`, cookie httpOnly `vroumi_session`
 - **Zod** (validation), **date-fns** (locale `fr`), **pdf-lib** (rapport PDF)
 
 ## Démarrage
@@ -24,7 +24,7 @@ grise…), rappels et coûts. Multi-utilisateurs par **garage**, auto-hébergeab
 npm install
 cp .env.example .env      # définir AUTH_SECRET (openssl rand -base64 32)
 npm run db:push           # applique le schéma Prisma
-npm run db:seed           # données de démo (demo@carnet-auto.app / demo1234)
+npm run db:seed           # données de démo (demo@vroumi.app / demo1234)
 npm run dev               # http://localhost:3000
 ```
 
@@ -64,7 +64,7 @@ Auto-hébergement calqué sur Oudiral :
 
 ```bash
 bash scripts/setup-pi.sh                 # install + .env + db:push + build
-sudo cp deploy/carnet.service /etc/systemd/system/ && sudo systemctl enable --now carnet
+sudo cp deploy/vroumi.service /etc/systemd/system/ && sudo systemctl enable --now vroumi
 sudo bash scripts/setup-auto-deploy.sh   # déploiement auto à chaque push sur main
 ```
 

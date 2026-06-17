@@ -195,7 +195,7 @@ export async function GET(
   ensureSpace(40);
   y = margin - 10 < y ? y : margin;
   page.drawText(
-    "Document genere par Carnet Auto - valeurs indicatives, a verifier.",
+    "Document genere par Vroumi - valeurs indicatives, a verifier.",
     { x: margin, y: 30, size: 8, font, color: gray }
   );
 

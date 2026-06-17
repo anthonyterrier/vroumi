@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 #
-# Assistant tout-en-un : rend Carnet Auto accessible depuis l'extérieur via une
+# Assistant tout-en-un : rend Vroumi accessible depuis l'extérieur via une
 # adresse web fixe et gratuite, en HTTPS.
 #
 #   1. configure DuckDNS (sous-domaine gratuit + mise à jour auto de l'IP),
 #   2. installe Caddy (reverse proxy + certificat HTTPS Let's Encrypt),
 #   3. active le cookie de session sécurisé dans .env,
-#   4. redémarre Carnet Auto.
+#   4. redémarre Vroumi.
 #
 # Usage :
 #   sudo bash scripts/setup-acces-web.sh
 # (le script te pose les 2 questions : sous-domaine et token DuckDNS)
 #
 # Tu peux aussi passer les valeurs en arguments :
-#   sudo bash scripts/setup-acces-web.sh carnet TON_TOKEN
+#   sudo bash scripts/setup-acces-web.sh vroumi TON_TOKEN
 #
 set -euo pipefail
 
@@ -26,19 +26,19 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$HERE/.." && pwd)"
 
 echo "════════════════════════════════════════════════════════════"
-echo "  Carnet Auto — Accès web depuis l'extérieur (DuckDNS + HTTPS)"
+echo "  Vroumi — Accès web depuis l'extérieur (DuckDNS + HTTPS)"
 echo "════════════════════════════════════════════════════════════"
 echo ""
 echo "Avant de continuer, tu dois avoir :"
 echo "  • un compte gratuit sur https://www.duckdns.org (connexion Google/GitHub),"
-echo "  • un sous-domaine créé (ex. 'carnet') et ton TOKEN (en haut de la page)."
+echo "  • un sous-domaine créé (ex. 'vroumi') et ton TOKEN (en haut de la page)."
 echo ""
 
 SUBDOMAIN="${1:-}"
 TOKEN="${2:-}"
 
 if [ -z "$SUBDOMAIN" ]; then
-  read -rp "👉 Sous-domaine DuckDNS (ex. carnet) : " SUBDOMAIN
+  read -rp "👉 Sous-domaine DuckDNS (ex. vroumi) : " SUBDOMAIN
 fi
 SUBDOMAIN="${SUBDOMAIN%%.duckdns.org}"
 
@@ -92,9 +92,9 @@ else
 fi
 
 echo ""
-echo "──► Étape 4/4 : redémarrage de Carnet Auto"
-systemctl restart carnet 2>/dev/null && echo "   ✅ Carnet Auto redémarré." \
-  || echo "   ⚠️  Redémarre manuellement :  sudo systemctl restart carnet"
+echo "──► Étape 4/4 : redémarrage de Vroumi"
+systemctl restart vroumi 2>/dev/null && echo "   ✅ Vroumi redémarré." \
+  || echo "   ⚠️  Redémarre manuellement :  sudo systemctl restart vroumi"
 
 echo ""
 echo "════════════════════════════════════════════════════════════"

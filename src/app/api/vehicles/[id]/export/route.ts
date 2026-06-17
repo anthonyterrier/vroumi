@@ -117,7 +117,7 @@ export async function GET(
 
   // BOM UTF-8 pour qu'Excel ouvre correctement les accents.
   const body = "﻿" + lines.join("\r\n");
-  const filename = `carnet-${(vehicle.name || "vehicule").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.csv`;
+  const filename = `vroumi-${(vehicle.name || "vehicule").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.csv`;
 
   return new NextResponse(body, {
     headers: {

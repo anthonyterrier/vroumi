@@ -17,7 +17,7 @@ export default async function AppLayout({
           <Link href="/dashboard" className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/icon.svg" alt="" className="h-8 w-8 rounded-lg" />
-            <span className="text-lg font-bold text-gray-900">Carnet Auto</span>
+            <span className="text-lg font-bold text-gray-900">Vroumi</span>
           </Link>
           <div className="flex items-center gap-3 text-sm">
             {admin && (
@@ -39,7 +39,7 @@ export default async function AppLayout({
       </header>
       <main className="mx-auto max-w-3xl px-4 py-5 pb-16">{children}</main>
       <footer className="no-print pb-6 text-center text-[11px] text-gray-300">
-        Carnet Auto · v{process.env.NEXT_PUBLIC_APP_VERSION}
+        Vroumi · v{process.env.NEXT_PUBLIC_APP_VERSION}
       </footer>
     </div>
   );

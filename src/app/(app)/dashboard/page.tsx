@@ -58,7 +58,7 @@ export default async function DashboardPage() {
         <div className="card flex flex-col items-center gap-3 py-10 text-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icon.svg" alt="" className="h-16 w-16 rounded-2xl opacity-80" />
-          <h2 className="text-lg font-semibold">Bienvenue sur Carnet Auto</h2>
+          <h2 className="text-lg font-semibold">Bienvenue sur Vroumi</h2>
           <p className="max-w-sm text-sm text-gray-500">
             Commencez par ajouter un véhicule pour suivre ses entretiens, ses
             réparations, ses pleins de carburant et ses échéances (contrôle

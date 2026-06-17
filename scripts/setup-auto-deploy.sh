@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Active le DÉPLOIEMENT AUTOMATIQUE de Carnet Auto.
+# Active le DÉPLOIEMENT AUTOMATIQUE de Vroumi.
 #
 # Un timer systemd vérifie GitHub régulièrement (toutes les 2 min par défaut) et,
 # dès que tu pousses sur la branche « main », le Pi se met à jour tout seul :
@@ -33,15 +33,15 @@ echo "⏱️  Intervalle   : $INTERVAL"
 chmod +x "$HERE/auto-deploy.sh"
 
 # 1) Sudoers : autorise CE script à redémarrer le service sans mot de passe.
-cat > /etc/sudoers.d/carnet-deploy <<EOF
-$RUN_USER ALL=(root) NOPASSWD: $SYSTEMCTL restart carnet
+cat > /etc/sudoers.d/vroumi-deploy <<EOF
+$RUN_USER ALL=(root) NOPASSWD: $SYSTEMCTL restart vroumi
 EOF
-chmod 440 /etc/sudoers.d/carnet-deploy
+chmod 440 /etc/sudoers.d/vroumi-deploy
 
 # 2) Service oneshot qui lance le déploiement.
-cat > /etc/systemd/system/carnet-deploy.service <<EOF
+cat > /etc/systemd/system/vroumi-deploy.service <<EOF
 [Unit]
-Description=Carnet Auto - déploiement automatique depuis GitHub
+Description=Vroumi - déploiement automatique depuis GitHub
 After=network-online.target
 Wants=network-online.target
 
@@ -54,26 +54,26 @@ ExecStart=$HERE/auto-deploy.sh
 EOF
 
 # 3) Timer qui déclenche le service à intervalle régulier.
-cat > /etc/systemd/system/carnet-deploy.timer <<EOF
+cat > /etc/systemd/system/vroumi-deploy.timer <<EOF
 [Unit]
-Description=Vérifie les mises à jour de Carnet Auto sur GitHub
+Description=Vérifie les mises à jour de Vroumi sur GitHub
 
 [Timer]
 OnBootSec=1min
 OnUnitActiveSec=$INTERVAL
-Unit=carnet-deploy.service
+Unit=vroumi-deploy.service
 
 [Install]
 WantedBy=timers.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now carnet-deploy.timer
+systemctl enable --now vroumi-deploy.timer
 
 echo ""
 echo "✅ Auto-déploiement activé (vérification toutes les $INTERVAL)."
 echo "   À chaque 'git push' sur main, le Pi se met à jour automatiquement."
 echo ""
-echo "🔎 Voir les déploiements :  journalctl -u carnet-deploy -f"
-echo "▶️  Forcer maintenant    :  sudo systemctl start carnet-deploy"
-echo "⏸️  Désactiver           :  sudo systemctl disable --now carnet-deploy.timer"
+echo "🔎 Voir les déploiements :  journalctl -u vroumi-deploy -f"
+echo "▶️  Forcer maintenant    :  sudo systemctl start vroumi-deploy"
+echo "⏸️  Désactiver           :  sudo systemctl disable --now vroumi-deploy.timer"

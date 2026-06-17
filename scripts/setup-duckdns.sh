@@ -4,13 +4,13 @@
 # même quand l'IP publique change (pas besoin de nom de domaine payant).
 #
 # Prérequis : un compte gratuit sur https://www.duckdns.org (connexion via
-# Google/GitHub), puis crée un sous-domaine (ex. "carnet-anthony") et récupère
+# Google/GitHub), puis crée un sous-domaine (ex. "vroumi-anthony") et récupère
 # ton TOKEN affiché en haut de la page.
 #
 # Usage :
 #   sudo bash scripts/setup-duckdns.sh <sous-domaine> <token>
 # Exemple :
-#   sudo bash scripts/setup-duckdns.sh carnet-anthony 5f3c1a2b-....
+#   sudo bash scripts/setup-duckdns.sh vroumi-anthony 5f3c1a2b-....
 #
 # Le script :
 #   - met à jour l'IP tout de suite,
@@ -27,7 +27,7 @@ SUBDOMAIN="${1:-}"
 TOKEN="${2:-}"
 if [ -z "$SUBDOMAIN" ] || [ -z "$TOKEN" ]; then
   echo "Usage : sudo bash scripts/setup-duckdns.sh <sous-domaine> <token>"
-  echo "Exemple : sudo bash scripts/setup-duckdns.sh carnet-anthony 5f3c1a2b-...."
+  echo "Exemple : sudo bash scripts/setup-duckdns.sh vroumi-anthony 5f3c1a2b-...."
   exit 1
 fi
 
@@ -44,7 +44,7 @@ mkdir -p "$DUCK_DIR"
 # laisse le champ ip vide).
 cat > "$UPDATE_SH" <<EOF
 #!/usr/bin/env bash
-# Mise à jour DuckDNS pour $SUBDOMAIN.duckdns.org — généré par Carnet Auto.
+# Mise à jour DuckDNS pour $SUBDOMAIN.duckdns.org — généré par Vroumi.
 curl -ksS "https://www.duckdns.org/update?domains=$SUBDOMAIN&token=$TOKEN&ip=" \\
   -o "$LOG_FILE" 2>/dev/null
 echo " (\$(date '+%F %T'))" >> "$LOG_FILE"

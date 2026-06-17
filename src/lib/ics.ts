@@ -42,11 +42,11 @@ export function buildIcsEvent({
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Carnet Auto//FR",
+    "PRODID:-//Vroumi//FR",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "BEGIN:VEVENT",
-    `UID:${uid}@carnet-auto`,
+    `UID:${uid}@vroumi`,
     `DTSTAMP:${icsStamp(new Date())}`,
     `DTSTART;VALUE=DATE:${start}`,
     `DTEND;VALUE=DATE:${end}`,

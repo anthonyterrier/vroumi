@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Installation / mise à jour de Carnet Auto sur un Raspberry Pi (ou tout Linux).
+# Installation / mise à jour de Vroumi sur un Raspberry Pi (ou tout Linux).
 # Idempotent : on peut le relancer après un « git pull » pour mettre à jour.
 #
 # Usage :
@@ -71,10 +71,10 @@ echo "🏗️  Build de production…"
 npm run build
 
 echo ""
-echo "✅ Carnet Auto est prêt !"
+echo "✅ Vroumi est prêt !"
 echo ""
 echo "▶️  Lancer maintenant :        npm run start"
-echo "♾️  Lancer en permanence :     voir deploy/carnet.service et docs/RASPBERRY-PI.md"
+echo "♾️  Lancer en permanence :     voir deploy/vroumi.service et docs/RASPBERRY-PI.md"
 echo ""
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 echo "🌐 Une fois lancé, ouvrez :   http://${IP:-<ip-du-pi>}:3000"
