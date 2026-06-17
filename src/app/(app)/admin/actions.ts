@@ -76,3 +76,27 @@ export async function removeMember(membershipId: string) {
   await prisma.membership.delete({ where: { id: membershipId } });
   revalidatePath("/admin");
 }
+
+/**
+ * Supprime définitivement un compte utilisateur (et ses adhésions aux garages,
+ * en cascade). Garde-fous : on ne peut pas se supprimer soi-même, ni supprimer
+ * le dernier administrateur (pour ne pas verrouiller l'application).
+ */
+export async function deleteUser(userId: string) {
+  const admin = await requireAdmin();
+  if (admin.id === userId) return; // on ne se supprime pas soi-même
+
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { isAdmin: true },
+  });
+  if (!target) return;
+
+  if (target.isAdmin) {
+    const adminCount = await prisma.user.count({ where: { isAdmin: true } });
+    if (adminCount <= 1) return; // ne pas supprimer le dernier admin
+  }
+
+  await prisma.user.delete({ where: { id: userId } });
+  revalidatePath("/admin");
+}

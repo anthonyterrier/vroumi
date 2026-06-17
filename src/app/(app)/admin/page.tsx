@@ -11,6 +11,7 @@ import {
   toggleAdmin,
   createGarage,
   removeMember,
+  deleteUser,
 } from "@/app/(app)/admin/actions";
 import { ROLE_LABELS } from "@/lib/labels";
 import { formatDate } from "@/lib/format";
@@ -164,18 +165,29 @@ export default async function AdminPage() {
                   </p>
                   <p className="text-xs text-gray-400">{u.email}</p>
                 </div>
-                <form action={toggleAdmin.bind(null, u.id, !u.isAdmin)}>
-                  <SubmitButton
-                    className="text-xs text-brand-600 hover:underline"
-                    pendingLabel="…"
-                  >
-                    {u.isAdmin
-                      ? admin.id === u.id
-                        ? ""
-                        : "Retirer admin"
-                      : "Promouvoir admin"}
-                  </SubmitButton>
-                </form>
+                <div className="flex items-center gap-3">
+                  {admin.id !== u.id && (
+                    <form action={toggleAdmin.bind(null, u.id, !u.isAdmin)}>
+                      <SubmitButton
+                        className="text-xs text-brand-600 hover:underline"
+                        pendingLabel="…"
+                      >
+                        {u.isAdmin ? "Retirer admin" : "Promouvoir admin"}
+                      </SubmitButton>
+                    </form>
+                  )}
+                  {admin.id !== u.id && (
+                    <form action={deleteUser.bind(null, u.id)}>
+                      <DeleteButton
+                        label="Supprimer"
+                        confirmMessage={`Supprimer définitivement le compte de ${u.name} (${u.email}) ? Cette action est irréversible.`}
+                      />
+                    </form>
+                  )}
+                  {admin.id === u.id && (
+                    <span className="text-xs text-gray-400">vous</span>
+                  )}
+                </div>
               </div>
               {u.memberships.length > 0 && (
                 <div className="flex flex-wrap gap-2">
