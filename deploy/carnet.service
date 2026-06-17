@@ -1,0 +1,48 @@
+# Service systemd pour faire tourner Carnet Auto en permanence sur un Raspberry Pi.
+#
+# Installation :
+#   1. Adaptez WorkingDirectory, User et le chemin de npm si besoin (voir
+#      docs/RASPBERRY-PI.md).
+#   2. sudo cp deploy/carnet.service /etc/systemd/system/carnet.service
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable --now carnet
+#
+# Suivi :     sudo systemctl status carnet
+# Journaux :  journalctl -u carnet -f
+
+[Unit]
+Description=Carnet Auto - suivi d'entretien automobile
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# Utilisateur qui possède le dossier du projet (souvent "pi").
+User=pi
+Group=pi
+
+# Chemin ABSOLU du projet sur le Raspberry Pi.
+WorkingDirectory=/home/pi/carnet-entretien-auto
+
+# Variables d'environnement (chargées depuis le fichier .env du projet).
+EnvironmentFile=/home/pi/carnet-entretien-auto/.env
+# Écoute sur toutes les interfaces réseau (accessible depuis le LAN) port 3000.
+Environment=NODE_ENV=production
+Environment=HOSTNAME=0.0.0.0
+Environment=PORT=3000
+
+# Démarrage du serveur de production Next.js.
+# Vérifiez le chemin de npm avec `which npm` (souvent /usr/bin/npm).
+ExecStart=/usr/bin/npm run start
+
+# Redémarrage automatique en cas de plantage.
+Restart=on-failure
+RestartSec=5
+
+# Robustesse / sécurité de base.
+NoNewPrivileges=true
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

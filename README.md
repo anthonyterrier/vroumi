@@ -58,6 +58,19 @@ Tout passe par le garage : lecture via `requireVehicle` / `getAccessibleVehicles
 mutations via `assertVehicleAccess` puis filtre systématique `{ id, vehicleId }`
 (ou `garageId`) dans `deleteMany` / `updateMany`.
 
+## Déploiement (Raspberry Pi / Linux)
+
+Auto-hébergement calqué sur Oudiral :
+
+```bash
+bash scripts/setup-pi.sh                 # install + .env + db:push + build
+sudo cp deploy/carnet.service /etc/systemd/system/ && sudo systemctl enable --now carnet
+sudo bash scripts/setup-auto-deploy.sh   # déploiement auto à chaque push sur main
+```
+
+Détails et accès extérieur (HTTPS/VPN) : voir [`docs/RASPBERRY-PI.md`](docs/RASPBERRY-PI.md).
+**Pousser sur `main` = déployer** (timer systemd toutes les 2 min).
+
 ## Licence
 
 Projet personnel — usage libre.
