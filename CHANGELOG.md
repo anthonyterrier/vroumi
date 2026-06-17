@@ -14,3 +14,7 @@ Chaque push sur `main` est déployé automatiquement sur le Raspberry Pi
   **suppression de compte** (garde-fous : pas soi-même, pas le dernier admin).
 - Déploiement : service systemd `vroumi` (port 3001 pour cohabiter avec
   Oudiral), auto-déploiement, accès extérieur DuckDNS + HTTPS (Caddy).
+
+## Test auto-déploiement
+
+- 2026-06-17 : vérification que le Pi déploie automatiquement les commits poussés.
