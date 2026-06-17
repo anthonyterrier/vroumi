@@ -15,7 +15,12 @@
 # Usage :
 #   sudo bash scripts/setup-https-caddy.sh <domaine>
 # Exemple :
-#   sudo bash scripts/setup-https-caddy.sh vroumi-anthony.duckdns.org
+#   sudo bash scripts/setup-https-caddy.sh vroumi.duckdns.org
+#
+# COEXISTENCE avec une autre app (ex. Oudiral) sur le même Pi :
+#   - lancez Vroumi sur un port distinct (ex. 3001, voir deploy/vroumi.service) ;
+#   - indiquez ce port via UPSTREAM, l'ajout au Caddyfile est NON destructif :
+#       sudo UPSTREAM=localhost:3001 bash scripts/setup-https-caddy.sh vroumi.duckdns.org
 #
 set -euo pipefail
 
@@ -49,14 +54,25 @@ else
 fi
 
 # --- Configuration : reverse proxy + HTTPS auto -----------------------------
-echo "📝 Écriture du Caddyfile (/etc/caddy/Caddyfile)…"
-cat > /etc/caddy/Caddyfile <<EOF
+CADDYFILE="/etc/caddy/Caddyfile"
+touch "$CADDYFILE"
+
+# Ajout NON destructif : si un autre service (ex. Oudiral) utilise déjà ce
+# Caddyfile, on ajoute simplement le bloc de Vroumi sans toucher à l'existant.
+if grep -qE "^[[:space:]]*$DOMAIN[[:space:]]*\{" "$CADDYFILE"; then
+  echo "📝 Le Caddyfile contient déjà un bloc pour $DOMAIN — inchangé."
+  echo "   (Modifiez /etc/caddy/Caddyfile à la main si besoin.)"
+else
+  echo "📝 Ajout du bloc Vroumi au Caddyfile ($CADDYFILE)…"
+  cat >> "$CADDYFILE" <<EOF
+
 # Vroumi — HTTPS automatique (Let's Encrypt) + reverse proxy vers l'app.
 $DOMAIN {
 	encode gzip
 	reverse_proxy $UPSTREAM
 }
 EOF
+fi
 
 systemctl enable caddy >/dev/null 2>&1 || true
 systemctl restart caddy

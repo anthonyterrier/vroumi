@@ -27,10 +27,12 @@ WorkingDirectory=/home/pi/vroumi
 
 # Variables d'environnement (chargées depuis le fichier .env du projet).
 EnvironmentFile=/home/pi/vroumi/.env
-# Écoute sur toutes les interfaces réseau (accessible depuis le LAN) port 3000.
+# Écoute sur toutes les interfaces réseau (accessible depuis le LAN).
+# PORT 3001 pour coexister avec Oudiral (qui occupe déjà le 3000) sur le même Pi.
+# Si Vroumi est seul sur la machine, vous pouvez repasser à 3000.
 Environment=NODE_ENV=production
 Environment=HOSTNAME=0.0.0.0
-Environment=PORT=3000
+Environment=PORT=3001
 
 # Démarrage du serveur de production Next.js.
 # Vérifiez le chemin de npm avec `which npm` (souvent /usr/bin/npm).

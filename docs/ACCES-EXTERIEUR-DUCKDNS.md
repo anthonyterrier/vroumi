@@ -41,7 +41,8 @@ sudo bash scripts/setup-acces-web.sh vroumi TON_TOKEN
 sudo bash scripts/setup-duckdns.sh vroumi TON_TOKEN
 
 # 2) HTTPS : installe Caddy en reverse proxy + certificat automatique
-sudo bash scripts/setup-https-caddy.sh vroumi.duckdns.org
+#    (sur le port où écoute Vroumi — 3001 si Oudiral occupe déjà le 3000)
+sudo UPSTREAM=localhost:3001 bash scripts/setup-https-caddy.sh vroumi.duckdns.org
 
 # 3) Cookie sécurisé (obligatoire en HTTPS) puis redémarrage
 sed -i 's/^COOKIE_SECURE=.*/COOKIE_SECURE="true"/' .env
@@ -50,6 +51,33 @@ sudo systemctl restart vroumi
 
 Ouvre ensuite **https://vroumi.duckdns.org** (le 1er accès peut prendre 1–2 min,
 le temps d'obtenir le certificat).
+
+## 🔀 Coexistence avec Oudiral (même Raspberry Pi)
+
+Si Oudiral et Vroumi tournent sur le même Pi (même IP publique), ils doivent
+écouter sur des **ports différents** et **partager** le même Caddy :
+
+- Oudiral → port **3000** (inchangé) → `oudiral.duckdns.org`
+- Vroumi  → port **3001** (déjà configuré dans `deploy/vroumi.service`) → `vroumi.duckdns.org`
+
+Le script `setup-https-caddy.sh` **ajoute** le bloc Vroumi au `/etc/caddy/Caddyfile`
+existant sans effacer celui d'Oudiral. Au final, ton Caddyfile ressemble à :
+
+```
+oudiral.duckdns.org {
+	encode gzip
+	reverse_proxy localhost:3000
+}
+
+vroumi.duckdns.org {
+	encode gzip
+	reverse_proxy localhost:3001
+}
+```
+
+Les deux sous-domaines pointent vers la même box (mêmes ports 80/443 redirigés
+vers le Pi) ; c'est Caddy qui aiguille selon le nom de domaine. Rien à changer
+côté redirection de ports.
 
 ## ⚠️ Cookie de session
 
