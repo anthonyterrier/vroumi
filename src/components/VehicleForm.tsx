@@ -1,0 +1,162 @@
+import { SubmitButton } from "@/components/SubmitButton";
+import { FUEL_TYPE_LABELS } from "@/lib/labels";
+import type { Vehicle } from "@prisma/client";
+
+export function VehicleForm({
+  action,
+  vehicle,
+  submitLabel = "Enregistrer",
+}: {
+  action: (formData: FormData) => void | Promise<void>;
+  vehicle?: Vehicle | null;
+  submitLabel?: string;
+}) {
+  return (
+    <form action={action} className="space-y-4">
+      <div>
+        <label className="label" htmlFor="name">
+          Désignation du véhicule *
+        </label>
+        <input
+          id="name"
+          name="name"
+          className="input"
+          required
+          defaultValue={vehicle?.name ?? ""}
+          placeholder="ex. La Clio"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="label" htmlFor="make">
+            Marque
+          </label>
+          <input
+            id="make"
+            name="make"
+            className="input"
+            defaultValue={vehicle?.make ?? ""}
+            placeholder="Renault"
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="model">
+            Modèle
+          </label>
+          <input
+            id="model"
+            name="model"
+            className="input"
+            defaultValue={vehicle?.model ?? ""}
+            placeholder="Clio IV"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="label" htmlFor="year">
+            Année
+          </label>
+          <input
+            id="year"
+            name="year"
+            type="number"
+            className="input"
+            defaultValue={vehicle?.year ?? ""}
+            placeholder="2018"
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="fuelType">
+            Carburant
+          </label>
+          <select
+            id="fuelType"
+            name="fuelType"
+            className="input"
+            defaultValue={vehicle?.fuelType ?? "GASOLINE"}
+          >
+            {Object.entries(FUEL_TYPE_LABELS).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="label" htmlFor="plate">
+            Immatriculation
+          </label>
+          <input
+            id="plate"
+            name="plate"
+            className="input"
+            defaultValue={vehicle?.plate ?? ""}
+            placeholder="AA-123-BB"
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="vin">
+            N° de série (VIN)
+          </label>
+          <input
+            id="vin"
+            name="vin"
+            className="input"
+            defaultValue={vehicle?.vin ?? ""}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="label" htmlFor="initialMileage">
+            Kilométrage initial
+          </label>
+          <input
+            id="initialMileage"
+            name="initialMileage"
+            type="number"
+            className="input"
+            defaultValue={vehicle?.initialMileage ?? ""}
+            placeholder="120000"
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="tankCapacity">
+            Réservoir (L)
+          </label>
+          <input
+            id="tankCapacity"
+            name="tankCapacity"
+            type="number"
+            step="any"
+            className="input"
+            defaultValue={vehicle?.tankCapacity ?? ""}
+            placeholder="45"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="label" htmlFor="notes">
+          Notes
+        </label>
+        <textarea
+          id="notes"
+          name="notes"
+          rows={2}
+          className="input"
+          defaultValue={vehicle?.notes ?? ""}
+        />
+      </div>
+
+      <SubmitButton className="btn-primary w-full">{submitLabel}</SubmitButton>
+    </form>
+  );
+}

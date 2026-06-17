@@ -1,0 +1,273 @@
+// Carnet d'entretien auto — schéma de la base de données
+// Suivi des véhicules : entretiens, réparations, carburant, kilométrage,
+// documents administratifs (assurance, contrôle technique…) et rappels.
+//
+// Dev  : SQLite (provider = "sqlite", DATABASE_URL="file:./dev.db")
+// Prod : pour PostgreSQL, remplacez provider par "postgresql".
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// --- Comptes & accès ---
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  passwordHash String
+  name         String
+  isAdmin      Boolean      @default(false) // peut créer/gérer les comptes
+  createdAt    DateTime     @default(now())
+  memberships  Membership[]
+  invitesSent  Invite[]     @relation("InviteCreatedBy")
+}
+
+// Un garage regroupe les personnes qui suivent un ou plusieurs véhicules :
+// propriétaires, conducteurs de la famille, etc.
+model Garage {
+  id          String           @id @default(cuid())
+  name        String
+  createdAt   DateTime         @default(now())
+  memberships Membership[]
+  vehicles    Vehicle[]
+  invites     Invite[]
+  services    ServiceContact[]
+}
+
+enum Role {
+  OWNER  // accès complet, gestion des membres
+  DRIVER // conducteur / famille : lecture + saisie
+  VIEWER // lecture seule
+}
+
+model Membership {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  garage    Garage   @relation(fields: [garageId], references: [id], onDelete: Cascade)
+  garageId  String
+  role      Role     @default(DRIVER)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, garageId])
+}
+
+// Invitation créée par un administrateur : l'utilisateur choisit lui-même son
+// mot de passe via le lien (aucun mot de passe n'est défini par l'admin).
+model Invite {
+  id          String    @id @default(cuid())
+  token       String    @unique
+  email       String
+  name        String
+  garage      Garage    @relation(fields: [garageId], references: [id], onDelete: Cascade)
+  garageId    String
+  role        Role      @default(DRIVER)
+  createdBy   User?     @relation("InviteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+}
+
+// --- Véhicule ---
+
+enum FuelType {
+  GASOLINE // Essence
+  DIESEL
+  ELECTRIC // Électrique
+  HYBRID   // Hybride
+  LPG      // GPL
+  OTHER
+}
+
+model Vehicle {
+  id            String   @id @default(cuid())
+  garage        Garage   @relation(fields: [garageId], references: [id], onDelete: Cascade)
+  garageId      String
+  name          String // surnom / désignation libre (ex. "La Clio")
+  make          String? // marque (ex. Renault)
+  model         String? // modèle (ex. Clio IV)
+  year          Int? // année de mise en circulation
+  plate         String? // immatriculation
+  vin           String? // numéro de série (VIN)
+  fuelType      FuelType @default(GASOLINE)
+  tankCapacity  Float? // capacité du réservoir (L), pour info
+  initialMileage Int? // kilométrage à l'achat / création du profil
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  maintenances  Maintenance[]
+  repairs       Repair[]
+  fuelEntries   FuelEntry[]
+  mileageEntries MileageEntry[]
+  documents     Document[]
+  reminders     Reminder[]
+}
+
+// --- Entretiens ---
+
+enum MaintenanceType {
+  VIDANGE                // Vidange huile moteur
+  FILTRE_HUILE           // Filtre à huile
+  FILTRE_AIR             // Filtre à air
+  FILTRE_HABITACLE       // Filtre habitacle / pollen
+  FILTRE_CARBURANT       // Filtre à carburant
+  FREINS                 // Plaquettes / disques de frein
+  PNEUS                  // Pneumatiques
+  COURROIE_DISTRIBUTION  // Courroie de distribution
+  COURROIE_ACCESSOIRE    // Courroie d'accessoires
+  BOUGIES                // Bougies d'allumage / préchauffage
+  BATTERIE               // Batterie
+  AMORTISSEURS           // Amortisseurs / suspension
+  ECHAPPEMENT            // Échappement
+  CLIMATISATION          // Recharge / entretien clim
+  LIQUIDE_REFROIDISSEMENT// Liquide de refroidissement
+  ESSUIE_GLACE           // Balais d'essuie-glace
+  REVISION               // Révision générale (constructeur)
+  AUTRE
+}
+
+model Maintenance {
+  id          String          @id @default(cuid())
+  vehicle     Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId   String
+  type        MaintenanceType @default(REVISION)
+  title       String? // précision libre (ex. "Vidange + filtre")
+  performedAt DateTime
+  mileage     Int? // kilométrage au moment de l'entretien
+  cost        Float? // coût TTC
+  serviceName String? // garage / lieu (auto-ajouté au catalogue)
+  notes       String?
+  // Prochaine échéance facultative (alimente l'aperçu et les rappels) :
+  nextDueDate    DateTime?
+  nextDueMileage Int?
+  createdAt   DateTime        @default(now())
+
+  @@index([vehicleId, performedAt])
+}
+
+// --- Réparations / pannes ---
+
+model Repair {
+  id          String   @id @default(cuid())
+  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId   String
+  title       String // description courte (ex. "Remplacement alternateur")
+  performedAt DateTime
+  mileage     Int?
+  cost        Float?
+  serviceName String?
+  underWarranty Boolean @default(false)
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  @@index([vehicleId, performedAt])
+}
+
+// --- Carburant ---
+
+model FuelEntry {
+  id          String   @id @default(cuid())
+  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId   String
+  filledAt    DateTime
+  mileage     Int? // kilométrage au plein (pour calcul de consommation)
+  liters      Float
+  pricePerLiter Float?
+  totalCost   Float?
+  fullTank    Boolean  @default(true) // plein complet (requis pour la conso)
+  station     String?
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  @@index([vehicleId, filledAt])
+}
+
+// --- Relevés kilométriques (pour le graphique d'évolution) ---
+
+model MileageEntry {
+  id         String   @id @default(cuid())
+  vehicle    Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId  String
+  readAt     DateTime
+  mileage    Int
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  @@index([vehicleId, readAt])
+}
+
+// --- Documents administratifs (assurance, contrôle technique…) ---
+
+enum DocumentType {
+  ASSURANCE
+  CONTROLE_TECHNIQUE
+  CARTE_GRISE
+  VIGNETTE_CRITAIR
+  GARANTIE
+  AUTRE
+}
+
+model Document {
+  id        String       @id @default(cuid())
+  vehicle   Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId String
+  type      DocumentType @default(ASSURANCE)
+  label     String? // précision (ex. "Tous risques — MAIF")
+  provider  String? // organisme / centre
+  issuedAt  DateTime?
+  expiresAt DateTime? // échéance (alimente rappels et export .ics)
+  cost      Float?
+  notes     String?
+  createdAt DateTime     @default(now())
+
+  @@index([vehicleId, expiresAt])
+}
+
+// --- Rappels ---
+
+enum ReminderKind {
+  MAINTENANCE
+  CONTROLE_TECHNIQUE
+  ASSURANCE
+  DOCUMENT
+  OTHER
+}
+
+model Reminder {
+  id         String       @id @default(cuid())
+  vehicle    Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId  String
+  kind       ReminderKind @default(MAINTENANCE)
+  label      String
+  dueDate    DateTime? // échéance par date
+  dueMileage Int? // échéance par kilométrage
+  done       Boolean      @default(false)
+  notes      String?
+  createdAt  DateTime     @default(now())
+
+  @@index([vehicleId, dueDate])
+}
+
+// --- Catalogue de garages / prestataires (par garage utilisateur) ---
+
+model ServiceContact {
+  id         String   @id @default(cuid())
+  garage     Garage   @relation(fields: [garageId], references: [id], onDelete: Cascade)
+  garageId   String
+  name       String
+  brand      String? // enseigne (ex. Norauto)
+  address    String?
+  postalCode String?
+  city       String?
+  phone      String?
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  @@unique([garageId, name])
+}

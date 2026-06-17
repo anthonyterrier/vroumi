@@ -1,0 +1,17 @@
+{
+  "name": "Carnet Auto",
+  "short_name": "Carnet Auto",
+  "description": "Suivi d'entretien automobile",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#f9fafb",
+  "theme_color": "#1f6f43",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
