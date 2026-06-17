@@ -37,6 +37,7 @@ model Garage {
   vehicles    Vehicle[]
   invites     Invite[]
   services    ServiceContact[]
+  sharedVehicles VehicleShare[]
 }
 
 enum Role {
@@ -85,21 +86,41 @@ enum FuelType {
   OTHER
 }
 
+enum VehicleCategory {
+  CAR          // Voiture
+  MOTORCYCLE   // Moto / scooter
+  VAN          // Utilitaire / fourgon
+  TRUCK        // Camion / poids lourd
+  TRACTOR      // Tracteur
+  AGRICULTURAL // Engin agricole
+  OTHER
+}
+
+// Unité d'usage : kilomètres (route) ou heures moteur (engins agricoles…).
+enum UsageUnit {
+  KM
+  HOURS
+}
+
 model Vehicle {
-  id            String   @id @default(cuid())
-  garage        Garage   @relation(fields: [garageId], references: [id], onDelete: Cascade)
+  id            String          @id @default(cuid())
+  // Garage propriétaire. Le véhicule peut aussi être partagé avec d'autres
+  // garages via VehicleShare (relation plusieurs-à-plusieurs).
+  garage        Garage          @relation(fields: [garageId], references: [id], onDelete: Cascade)
   garageId      String
   name          String // surnom / désignation libre (ex. "La Clio")
+  category      VehicleCategory @default(CAR)
+  usageUnit     UsageUnit       @default(KM) // km (route) ou heures moteur
   make          String? // marque (ex. Renault)
   model         String? // modèle (ex. Clio IV)
   year          Int? // année de mise en circulation
   plate         String? // immatriculation
   vin           String? // numéro de série (VIN)
-  fuelType      FuelType @default(GASOLINE)
+  fuelType      FuelType        @default(GASOLINE)
   tankCapacity  Float? // capacité du réservoir (L), pour info
-  initialMileage Int? // kilométrage à l'achat / création du profil
+  initialMileage Int? // compteur (km ou h) à l'achat / création du profil
   notes         String?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime        @default(now())
 
   maintenances  Maintenance[]
   repairs       Repair[]
@@ -107,6 +128,19 @@ model Vehicle {
   mileageEntries MileageEntry[]
   documents     Document[]
   reminders     Reminder[]
+  shares        VehicleShare[]
+}
+
+// Partage d'un véhicule avec un garage supplémentaire (en plus du propriétaire).
+model VehicleShare {
+  id        String   @id @default(cuid())
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId String
+  garage    Garage   @relation(fields: [garageId], references: [id], onDelete: Cascade)
+  garageId  String
+  createdAt DateTime @default(now())
+
+  @@unique([vehicleId, garageId])
 }
 
 // --- Entretiens ---

@@ -10,12 +10,13 @@ import {
   updateMileage,
   deleteMileage,
 } from "@/app/(app)/vehicles/[id]/actions";
-import { formatDate, formatMileage } from "@/lib/format";
+import { formatDate, formatUsage } from "@/lib/format";
+import { usageUnitLabel } from "@/lib/labels";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import type { MileageEntry } from "@prisma/client";
 
-function MileageFields({ e }: { e?: MileageEntry }) {
+function MileageFields({ e, unit }: { e?: MileageEntry; unit: string }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
@@ -24,7 +25,7 @@ function MileageFields({ e }: { e?: MileageEntry }) {
           <TodayDateInput name="readAt" iso={e?.readAt.toISOString()} />
         </div>
         <div>
-          <label className="label">Kilométrage *</label>
+          <label className="label">Compteur ({usageUnitLabel(unit)}) *</label>
           <input
             name="mileage"
             type="number"
@@ -91,10 +92,12 @@ export default async function MileagePage({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold">Kilométrage</h2>
+        <h2 className="text-xl font-bold">
+          {vehicle.usageUnit === "HOURS" ? "Heures moteur" : "Kilométrage"}
+        </h2>
         <Modal trigger="+ Relevé" title="Ajouter un relevé">
           <form action={addAction} className="space-y-3">
-            <MileageFields />
+            <MileageFields unit={vehicle.usageUnit} />
             <SubmitButton className="btn-primary w-full">Enregistrer</SubmitButton>
           </form>
         </Modal>
@@ -102,7 +105,7 @@ export default async function MileagePage({
 
       <div className="card">
         <h3 className="mb-2 text-sm font-semibold text-gray-600">Évolution</h3>
-        <MileageChart points={points} />
+        <MileageChart points={points} unit={usageUnitLabel(vehicle.usageUnit)} />
       </div>
 
       <div className="space-y-2">
@@ -115,7 +118,7 @@ export default async function MileagePage({
         {entries.map((e) => (
           <div key={e.id} className="card flex items-center gap-3 py-3">
             <div className="flex-1">
-              <p className="font-medium">{formatMileage(e.mileage)}</p>
+              <p className="font-medium">{formatUsage(e.mileage, vehicle.usageUnit)}</p>
               <p className="text-xs text-gray-400">{formatDate(e.readAt)}</p>
               {e.notes && <p className="mt-1 text-sm text-gray-600">{e.notes}</p>}
             </div>
@@ -128,7 +131,7 @@ export default async function MileagePage({
                 action={updateMileage.bind(null, vehicle.id, e.id)}
                 className="space-y-3"
               >
-                <MileageFields e={e} />
+                <MileageFields e={e} unit={vehicle.usageUnit} />
                 <SubmitButton className="btn-primary w-full">Enregistrer</SubmitButton>
               </form>
             </Modal>

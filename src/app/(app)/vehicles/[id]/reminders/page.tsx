@@ -14,11 +14,12 @@ import {
   REMINDER_KIND_LABELS,
   dueStatus,
   DUE_STATUS_STYLE,
+  usageUnitLabel,
 } from "@/lib/labels";
-import { formatDate, formatMileage } from "@/lib/format";
+import { formatDate, formatUsage } from "@/lib/format";
 import type { Reminder } from "@prisma/client";
 
-function ReminderFields({ r }: { r?: Reminder }) {
+function ReminderFields({ r, unit }: { r?: Reminder; unit: string }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
@@ -49,7 +50,7 @@ function ReminderFields({ r }: { r?: Reminder }) {
         />
       </div>
       <div>
-        <label className="label">Échéance (kilométrage)</label>
+        <label className="label">Échéance (compteur {usageUnitLabel(unit)})</label>
         <input
           name="dueMileage"
           type="number"
@@ -89,7 +90,7 @@ export default async function RemindersPage({
         <h2 className="text-xl font-bold">Rappels</h2>
         <Modal trigger="+ Rappel" title="Ajouter un rappel">
           <form action={addAction} className="space-y-3">
-            <ReminderFields />
+            <ReminderFields unit={vehicle.usageUnit} />
             <SubmitButton className="btn-primary w-full">Enregistrer</SubmitButton>
           </form>
         </Modal>
@@ -127,7 +128,7 @@ export default async function RemindersPage({
                 <p className="text-xs text-gray-400">
                   {REMINDER_KIND_LABELS[r.kind]}
                   {r.dueDate ? ` · ${formatDate(r.dueDate)}` : ""}
-                  {r.dueMileage ? ` · ${formatMileage(r.dueMileage)}` : ""}
+                  {r.dueMileage ? ` · ${formatUsage(r.dueMileage, vehicle.usageUnit)}` : ""}
                 </p>
                 {r.notes && <p className="mt-1 text-sm text-gray-600">{r.notes}</p>}
               </div>
@@ -152,7 +153,7 @@ export default async function RemindersPage({
                   action={updateReminder.bind(null, vehicle.id, r.id)}
                   className="space-y-3"
                 >
-                  <ReminderFields r={r} />
+                  <ReminderFields r={r} unit={vehicle.usageUnit} />
                   <SubmitButton className="btn-primary w-full">Enregistrer</SubmitButton>
                 </form>
               </Modal>

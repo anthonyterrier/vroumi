@@ -3,6 +3,8 @@ import { requireVehicle, currentMileage } from "@/lib/vehicles";
 import { prisma } from "@/lib/prisma";
 import {
   FUEL_TYPE_LABELS,
+  VEHICLE_CATEGORY_ICON,
+  VEHICLE_CATEGORY_LABELS,
   MAINTENANCE_TYPE_ICON,
   maintenanceTypeKeys,
   maintenanceTypeLabel,
@@ -11,7 +13,7 @@ import {
   dueStatus,
   DUE_STATUS_STYLE,
 } from "@/lib/labels";
-import { formatDate, formatMileage, formatEuro } from "@/lib/format";
+import { formatDate, formatUsage, formatEuro } from "@/lib/format";
 
 export default async function VehicleOverviewPage({
   params,
@@ -73,11 +75,18 @@ export default async function VehicleOverviewPage({
       <div className="card">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold">{vehicle.name}</h1>
+            <h1 className="text-2xl font-bold">
+              {VEHICLE_CATEGORY_ICON[vehicle.category]} {vehicle.name}
+            </h1>
             <p className="text-sm text-gray-500">
-              {[vehicle.make, vehicle.model, vehicle.year]
+              {[
+                VEHICLE_CATEGORY_LABELS[vehicle.category],
+                vehicle.make,
+                vehicle.model,
+                vehicle.year,
+              ]
                 .filter(Boolean)
-                .join(" · ") || FUEL_TYPE_LABELS[vehicle.fuelType]}
+                .join(" · ")}
             </p>
           </div>
           <span className="badge border-gray-200 bg-gray-100 text-gray-600">
@@ -86,8 +95,10 @@ export default async function VehicleOverviewPage({
         </div>
         <div className="mt-4 grid grid-cols-3 gap-2 text-center">
           <div>
-            <div className="text-xl font-bold">{formatMileage(mileage)}</div>
-            <div className="text-[11px] text-gray-400">Kilométrage</div>
+            <div className="text-xl font-bold">{formatUsage(mileage, vehicle.usageUnit)}</div>
+            <div className="text-[11px] text-gray-400">
+              {vehicle.usageUnit === "HOURS" ? "Heures" : "Kilométrage"}
+            </div>
           </div>
           <div>
             <div className="text-xl font-bold">{formatEuro(totalCost)}</div>
@@ -137,7 +148,7 @@ export default async function VehicleOverviewPage({
                     <p className="text-xs text-gray-400">
                       {REMINDER_KIND_LABELS[r.kind]}
                       {r.dueDate ? ` · ${formatDate(r.dueDate)}` : ""}
-                      {r.dueMileage ? ` · ${formatMileage(r.dueMileage)}` : ""}
+                      {r.dueMileage ? ` · ${formatUsage(r.dueMileage, vehicle.usageUnit)}` : ""}
                     </p>
                   </div>
                   {status !== "unknown" && (
@@ -194,7 +205,7 @@ export default async function VehicleOverviewPage({
               </p>
               <p className="text-xs text-gray-400">
                 {formatDate(lastMaint.performedAt)}
-                {lastMaint.mileage ? ` · ${formatMileage(lastMaint.mileage)}` : ""}
+                {lastMaint.mileage ? ` · ${formatUsage(lastMaint.mileage, vehicle.usageUnit)}` : ""}
               </p>
             </div>
             {lastMaint.cost != null && (

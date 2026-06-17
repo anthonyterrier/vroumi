@@ -2,7 +2,8 @@ import { requireVehicle, currentMileage } from "@/lib/vehicles";
 import { prisma } from "@/lib/prisma";
 import { CostChart, type CostSlice } from "@/components/CostChart";
 import { PrintButton } from "@/components/PrintButton";
-import { formatEuro, formatMileage } from "@/lib/format";
+import { formatEuro, formatUsage } from "@/lib/format";
+import { usageUnitLabel } from "@/lib/labels";
 
 export default async function CostsPage({
   params,
@@ -109,7 +110,9 @@ export default async function CostsPage({
           <div className="text-lg font-bold">
             {costPerKm != null ? `${costPerKm.toFixed(2)} €` : "—"}
           </div>
-          <div className="text-[11px] text-gray-400">par km</div>
+          <div className="text-[11px] text-gray-400">
+            par {usageUnitLabel(vehicle.usageUnit)}
+          </div>
         </div>
       </div>
 
@@ -139,8 +142,10 @@ export default async function CostsPage({
       )}
 
       <p className="text-[11px] text-gray-400">
-        Kilométrage courant estimé : {formatMileage(mileage)}
-        {distance != null ? ` · ${formatMileage(distance)} parcourus` : ""}
+        Compteur courant estimé : {formatUsage(mileage, vehicle.usageUnit)}
+        {distance != null
+          ? ` · ${formatUsage(distance, vehicle.usageUnit)} parcourus`
+          : ""}
       </p>
     </div>
   );

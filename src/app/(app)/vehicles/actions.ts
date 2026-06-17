@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { FuelType } from "@prisma/client";
+import { FuelType, VehicleCategory, UsageUnit } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { assertVehicleAccess, getUserGarageIds } from "@/lib/vehicles";
@@ -29,8 +29,21 @@ function fuel(value: FormDataEntryValue | null): FuelType {
   return FUEL_VALUES.has(v as FuelType) ? (v as FuelType) : FuelType.GASOLINE;
 }
 
+const CATEGORY_VALUES = new Set(Object.values(VehicleCategory));
+function category(value: FormDataEntryValue | null): VehicleCategory {
+  const v = String(value ?? "");
+  return CATEGORY_VALUES.has(v as VehicleCategory)
+    ? (v as VehicleCategory)
+    : VehicleCategory.CAR;
+}
+function usageUnit(value: FormDataEntryValue | null): UsageUnit {
+  return String(value ?? "") === "HOURS" ? UsageUnit.HOURS : UsageUnit.KM;
+}
+
 const vehicleFields = (formData: FormData) => ({
   name: String(formData.get("name") ?? "").trim(),
+  category: category(formData.get("category")),
+  usageUnit: usageUnit(formData.get("usageUnit")),
   make: optString(formData.get("make")),
   model: optString(formData.get("model")),
   year: optInt(formData.get("year")),

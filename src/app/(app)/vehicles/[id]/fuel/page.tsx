@@ -9,12 +9,13 @@ import {
   type ConsumptionPoint,
 } from "@/components/ConsumptionChart";
 import { addFuel, updateFuel, deleteFuel } from "@/app/(app)/vehicles/[id]/actions";
-import { formatDate, formatMileage, formatEuro } from "@/lib/format";
+import { formatDate, formatUsage, formatEuro } from "@/lib/format";
+import { usageUnitLabel } from "@/lib/labels";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import type { FuelEntry } from "@prisma/client";
 
-function FuelFields({ e }: { e?: FuelEntry }) {
+function FuelFields({ e, unit }: { e?: FuelEntry; unit: string }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
@@ -23,7 +24,7 @@ function FuelFields({ e }: { e?: FuelEntry }) {
           <TodayDateInput name="filledAt" iso={e?.filledAt.toISOString()} />
         </div>
         <div>
-          <label className="label">Kilométrage</label>
+          <label className="label">Compteur ({usageUnitLabel(unit)})</label>
           <input
             name="mileage"
             type="number"
@@ -105,8 +106,12 @@ export default async function FuelPage({
     orderBy: { filledAt: "desc" },
   });
 
-  // Consommation : entre deux pleins COMPLETS consécutifs avec kilométrage,
-  // litres du plein le plus récent / distance parcourue × 100.
+  // Consommation entre deux pleins COMPLETS consécutifs avec compteur renseigné.
+  // En km : litres / distance × 100 (L/100 km). En heures : litres / heures (L/h).
+  const isHours = vehicle.usageUnit === "HOURS";
+  const consoUnitLabel = isHours ? "L/h" : "L/100 km";
+  const factor = isHours ? 1 : 100;
+
   const fulls = [...entries]
     .filter((e) => e.fullTank && e.mileage != null)
     .sort((a, b) => a.filledAt.getTime() - b.filledAt.getTime());
@@ -119,7 +124,7 @@ export default async function FuelPage({
     const cur = fulls[i];
     const dist = (cur.mileage ?? 0) - (prev.mileage ?? 0);
     if (dist > 0) {
-      const consumption = (cur.liters / dist) * 100;
+      const consumption = (cur.liters / dist) * factor;
       points.push({
         label: format(cur.filledAt, "dd/MM/yy", { locale: fr }),
         consumption: Math.round(consumption * 10) / 10,
@@ -129,7 +134,7 @@ export default async function FuelPage({
     }
   }
   const avgConsumption =
-    totalDistance > 0 ? (totalLiters / totalDistance) * 100 : null;
+    totalDistance > 0 ? (totalLiters / totalDistance) * factor : null;
 
   const totalCost = entries.reduce((s, e) => s + (e.totalCost ?? 0), 0);
   const addAction = addFuel.bind(null, vehicle.id);
@@ -141,14 +146,14 @@ export default async function FuelPage({
           <h2 className="text-xl font-bold">Carburant</h2>
           <p className="text-xs text-gray-400">
             {avgConsumption != null
-              ? `Moyenne : ${avgConsumption.toFixed(1)} L/100 km · `
+              ? `Moyenne : ${avgConsumption.toFixed(1)} ${consoUnitLabel} · `
               : ""}
             Total : {formatEuro(totalCost)}
           </p>
         </div>
         <Modal trigger="+ Plein" title="Ajouter un plein">
           <form action={addAction} className="space-y-3">
-            <FuelFields />
+            <FuelFields unit={vehicle.usageUnit} />
             <SubmitButton className="btn-primary w-full">Enregistrer</SubmitButton>
           </form>
         </Modal>
@@ -156,9 +161,9 @@ export default async function FuelPage({
 
       <div className="card">
         <h3 className="mb-2 text-sm font-semibold text-gray-600">
-          Consommation (L/100 km)
+          Consommation ({consoUnitLabel})
         </h3>
-        <ConsumptionChart points={points} />
+        <ConsumptionChart points={points} unitLabel={consoUnitLabel} />
       </div>
 
       <div className="space-y-2">
@@ -179,7 +184,7 @@ export default async function FuelPage({
               </p>
               <p className="text-xs text-gray-400">
                 {formatDate(e.filledAt)}
-                {e.mileage ? ` · ${formatMileage(e.mileage)}` : ""}
+                {e.mileage ? ` · ${formatUsage(e.mileage, vehicle.usageUnit)}` : ""}
                 {e.station ? ` · ${e.station}` : ""}
               </p>
             </div>
@@ -195,7 +200,7 @@ export default async function FuelPage({
                 action={updateFuel.bind(null, vehicle.id, e.id)}
                 className="space-y-3"
               >
-                <FuelFields e={e} />
+                <FuelFields e={e} unit={vehicle.usageUnit} />
                 <SubmitButton className="btn-primary w-full">Enregistrer</SubmitButton>
               </form>
             </Modal>

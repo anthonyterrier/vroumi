@@ -12,7 +12,14 @@ import {
 
 export type MileagePoint = { t: number; label: string; mileage: number };
 
-export function MileageChart({ points }: { points: MileagePoint[] }) {
+export function MileageChart({
+  points,
+  unit = "km",
+}: {
+  points: MileagePoint[];
+  unit?: string;
+}) {
+  const isHours = unit === "h";
   if (points.length < 2) {
     return (
       <p className="py-8 text-center text-sm text-gray-400">
@@ -34,11 +41,16 @@ export function MileageChart({ points }: { points: MileagePoint[] }) {
           <YAxis
             tick={{ fontSize: 11 }}
             width={48}
-            tickFormatter={(v) => `${Math.round(v / 1000)}k`}
+            tickFormatter={(v) =>
+              isHours ? `${Math.round(v)}` : `${Math.round(v / 1000)}k`
+            }
             domain={["dataMin", "dataMax"]}
           />
           <Tooltip
-            formatter={(v: number) => [`${v.toLocaleString("fr-FR")} km`, "Kilométrage"]}
+            formatter={(v: number) => [
+              `${v.toLocaleString("fr-FR")} ${unit}`,
+              isHours ? "Heures" : "Kilométrage",
+            ]}
             labelStyle={{ fontSize: 12 }}
             contentStyle={{ fontSize: 12 }}
           />

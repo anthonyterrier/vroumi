@@ -10,15 +10,18 @@ import {
   updateRepair,
   deleteRepair,
 } from "@/app/(app)/vehicles/[id]/actions";
-import { formatDate, formatMileage, formatEuro } from "@/lib/format";
+import { formatDate, formatUsage, formatEuro } from "@/lib/format";
+import { usageUnitLabel } from "@/lib/labels";
 import type { Repair } from "@prisma/client";
 
 function RepairFields({
   services,
   r,
+  unit,
 }: {
   services: { id: string; name: string; brand: string | null; city: string | null }[];
   r?: Repair;
+  unit: string;
 }) {
   return (
     <>
@@ -39,7 +42,7 @@ function RepairFields({
           <TodayDateInput name="performedAt" iso={r?.performedAt.toISOString()} />
         </div>
         <div>
-          <label className="label">Kilométrage</label>
+          <label className="label">Compteur ({usageUnitLabel(unit)})</label>
           <input
             name="mileage"
             type="number"
@@ -113,7 +116,7 @@ export default async function RepairsPage({
         </div>
         <Modal trigger="+ Réparation" title="Ajouter une réparation">
           <form action={addAction} className="space-y-3">
-            <RepairFields services={services} />
+            <RepairFields services={services} unit={vehicle.usageUnit} />
             <SubmitButton className="btn-primary w-full">Enregistrer</SubmitButton>
           </form>
         </Modal>
@@ -139,7 +142,7 @@ export default async function RepairsPage({
               </p>
               <p className="text-xs text-gray-400">
                 {formatDate(r.performedAt)}
-                {r.mileage ? ` · ${formatMileage(r.mileage)}` : ""}
+                {r.mileage ? ` · ${formatUsage(r.mileage, vehicle.usageUnit)}` : ""}
                 {r.serviceName ? ` · ${r.serviceName}` : ""}
               </p>
               {r.notes && <p className="mt-1 text-sm text-gray-600">{r.notes}</p>}
@@ -156,7 +159,7 @@ export default async function RepairsPage({
                 action={updateRepair.bind(null, vehicle.id, r.id)}
                 className="space-y-3"
               >
-                <RepairFields services={services} r={r} />
+                <RepairFields services={services} r={r} unit={vehicle.usageUnit} />
                 <SubmitButton className="btn-primary w-full">Enregistrer</SubmitButton>
               </form>
             </Modal>

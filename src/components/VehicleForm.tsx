@@ -1,5 +1,9 @@
 import { SubmitButton } from "@/components/SubmitButton";
-import { FUEL_TYPE_LABELS } from "@/lib/labels";
+import {
+  FUEL_TYPE_LABELS,
+  VEHICLE_CATEGORY_LABELS,
+  VEHICLE_CATEGORY_ICON,
+} from "@/lib/labels";
 import type { Vehicle } from "@prisma/client";
 
 export function VehicleForm({
@@ -25,6 +29,40 @@ export function VehicleForm({
           defaultValue={vehicle?.name ?? ""}
           placeholder="ex. La Clio"
         />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="label" htmlFor="category">
+            Catégorie
+          </label>
+          <select
+            id="category"
+            name="category"
+            className="input"
+            defaultValue={vehicle?.category ?? "CAR"}
+          >
+            {Object.entries(VEHICLE_CATEGORY_LABELS).map(([k, v]) => (
+              <option key={k} value={k}>
+                {VEHICLE_CATEGORY_ICON[k]} {v}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label" htmlFor="usageUnit">
+            Compteur
+          </label>
+          <select
+            id="usageUnit"
+            name="usageUnit"
+            className="input"
+            defaultValue={vehicle?.usageUnit ?? "KM"}
+          >
+            <option value="KM">Kilomètres (km)</option>
+            <option value="HOURS">Heures moteur (h)</option>
+          </select>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -116,7 +154,7 @@ export function VehicleForm({
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="label" htmlFor="initialMileage">
-            Kilométrage initial
+            Compteur initial (km ou h)
           </label>
           <input
             id="initialMileage"

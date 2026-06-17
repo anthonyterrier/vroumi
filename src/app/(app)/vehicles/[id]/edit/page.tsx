@@ -1,4 +1,4 @@
-import { requireVehicle } from "@/lib/vehicles";
+import { requireVehicle, getUserGarageIds } from "@/lib/vehicles";
 import { prisma } from "@/lib/prisma";
 import { Modal } from "@/components/Modal";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -9,6 +9,8 @@ import {
   addServiceContact,
   deleteServiceContact,
   importStarterServices,
+  shareVehicle,
+  unshareVehicle,
 } from "@/app/(app)/vehicles/[id]/actions";
 
 export default async function EditVehiclePage({
@@ -17,11 +19,26 @@ export default async function EditVehiclePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { vehicle } = await requireVehicle(id);
+  const { user, vehicle } = await requireVehicle(id);
 
-  const services = await prisma.serviceContact.findMany({
-    where: { garageId: vehicle.garageId },
+  const [services, shares, garageIds] = await Promise.all([
+    prisma.serviceContact.findMany({
+      where: { garageId: vehicle.garageId },
+      orderBy: { name: "asc" },
+    }),
+    prisma.vehicleShare.findMany({ where: { vehicleId: vehicle.id } }),
+    getUserGarageIds(user.id),
+  ]);
+
+  // Garages de l'utilisateur (hors propriétaire) proposables au partage.
+  const myGarages = await prisma.garage.findMany({
+    where: { id: { in: garageIds } },
     orderBy: { name: "asc" },
+  });
+  const sharedGarageIds = new Set(shares.map((s) => s.garageId));
+  const ownerGarage = await prisma.garage.findUnique({
+    where: { id: vehicle.garageId },
+    select: { name: true },
   });
 
   const updateAction = updateVehicle.bind(null, vehicle.id);
@@ -33,6 +50,57 @@ export default async function EditVehiclePage({
         <h2 className="mb-3 text-xl font-bold">Profil du véhicule</h2>
         <div className="card">
           <VehicleForm action={updateAction} vehicle={vehicle} submitLabel="Enregistrer" />
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-1 text-xl font-bold">Partage entre garages</h2>
+        <p className="mb-3 text-sm text-gray-500">
+          Rends ce véhicule accessible depuis plusieurs garages (ex. familial et
+          exploitation). Les membres de ces garages le verront et pourront le suivre.
+        </p>
+        <div className="space-y-2">
+          <div className="card flex items-center justify-between py-3">
+            <span className="font-medium">{ownerGarage?.name ?? "Garage"}</span>
+            <span className="badge border-brand-200 bg-brand-100 text-brand-800">
+              Propriétaire
+            </span>
+          </div>
+          {myGarages
+            .filter((g) => g.id !== vehicle.garageId)
+            .map((g) => {
+              const shared = sharedGarageIds.has(g.id);
+              return (
+                <div key={g.id} className="card flex items-center justify-between py-3">
+                  <span className="font-medium">{g.name}</span>
+                  {shared ? (
+                    <form action={unshareVehicle.bind(null, vehicle.id, g.id)}>
+                      <SubmitButton
+                        className="text-xs text-red-600 hover:underline"
+                        pendingLabel="…"
+                      >
+                        Ne plus partager
+                      </SubmitButton>
+                    </form>
+                  ) : (
+                    <form action={shareVehicle.bind(null, vehicle.id, g.id)}>
+                      <SubmitButton
+                        className="text-xs text-brand-600 hover:underline"
+                        pendingLabel="…"
+                      >
+                        Partager ici
+                      </SubmitButton>
+                    </form>
+                  )}
+                </div>
+              );
+            })}
+          {myGarages.filter((g) => g.id !== vehicle.garageId).length === 0 && (
+            <p className="card text-center text-sm text-gray-400">
+              Tu n&apos;appartiens qu&apos;à un seul garage. Crée ou rejoins un
+              autre garage (page Admin) pour pouvoir y partager ce véhicule.
+            </p>
+          )}
         </div>
       </section>
 

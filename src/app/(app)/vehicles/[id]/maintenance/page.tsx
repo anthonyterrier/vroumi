@@ -15,17 +15,20 @@ import {
   MAINTENANCE_TYPE_ICON,
   maintenanceTypeKeys,
   maintenanceTypeLabel,
+  usageUnitLabel,
 } from "@/lib/labels";
 import { MAINTENANCE_DISCLAIMER } from "@/lib/maintenance-intervals";
-import { formatDate, formatMileage, formatEuro } from "@/lib/format";
+import { formatDate, formatUsage, formatEuro } from "@/lib/format";
 import type { Maintenance } from "@prisma/client";
 
 function MaintenanceFields({
   services,
   m,
+  unit,
 }: {
   services: { id: string; name: string; brand: string | null; city: string | null }[];
   m?: Maintenance;
+  unit: string;
 }) {
   const checked = new Set(m ? maintenanceTypeKeys(m) : ["VIDANGE"]);
   return (
@@ -68,7 +71,7 @@ function MaintenanceFields({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="label">Kilométrage</label>
+          <label className="label">Compteur ({usageUnitLabel(unit)})</label>
           <input
             name="mileage"
             type="number"
@@ -105,7 +108,7 @@ function MaintenanceFields({
             />
           </div>
           <div>
-            <label className="label">Kilométrage</label>
+            <label className="label">Compteur ({usageUnitLabel(unit)})</label>
             <input
               name="nextDueMileage"
               type="number"
@@ -157,7 +160,7 @@ export default async function MaintenancePage({
         </div>
         <Modal trigger="+ Entretien" title="Ajouter un entretien">
           <form action={addAction} className="space-y-3">
-            <MaintenanceFields services={services} />
+            <MaintenanceFields services={services} unit={vehicle.usageUnit} />
             <p className="text-[11px] text-gray-400">{MAINTENANCE_DISCLAIMER}</p>
             <SubmitButton className="btn-primary w-full">Enregistrer</SubmitButton>
           </form>
@@ -182,14 +185,14 @@ export default async function MaintenancePage({
               )}
               <p className="text-xs text-gray-400">
                 {formatDate(m.performedAt)}
-                {m.mileage ? ` · ${formatMileage(m.mileage)}` : ""}
+                {m.mileage ? ` · ${formatUsage(m.mileage, vehicle.usageUnit)}` : ""}
                 {m.serviceName ? ` · ${m.serviceName}` : ""}
               </p>
               {m.nextDueDate || m.nextDueMileage ? (
                 <p className="text-xs text-brand-600">
                   Prochaine :{" "}
                   {m.nextDueDate ? formatDate(m.nextDueDate) : ""}
-                  {m.nextDueMileage ? ` · ${formatMileage(m.nextDueMileage)}` : ""}
+                  {m.nextDueMileage ? ` · ${formatUsage(m.nextDueMileage, vehicle.usageUnit)}` : ""}
                 </p>
               ) : null}
               {m.notes && <p className="mt-1 text-sm text-gray-600">{m.notes}</p>}
@@ -206,7 +209,7 @@ export default async function MaintenancePage({
                 action={updateMaintenance.bind(null, vehicle.id, m.id)}
                 className="space-y-3"
               >
-                <MaintenanceFields services={services} m={m} />
+                <MaintenanceFields services={services} m={m} unit={vehicle.usageUnit} />
                 <SubmitButton className="btn-primary w-full">Enregistrer</SubmitButton>
               </form>
             </Modal>
@@ -217,7 +220,7 @@ export default async function MaintenancePage({
         ))}
       </div>
       <p className="text-[11px] text-gray-400">
-        Kilométrage courant estimé : {formatMileage(mileage)}
+        Compteur courant estimé : {formatUsage(mileage, vehicle.usageUnit)}
       </p>
     </div>
   );

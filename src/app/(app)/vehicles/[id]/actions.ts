@@ -8,7 +8,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { assertVehicleAccess } from "@/lib/vehicles";
+import { assertVehicleAccess, getUserGarageIds } from "@/lib/vehicles";
 import { STARTER_SERVICES } from "@/lib/service-catalog";
 
 // --- Helpers de parsing ---
@@ -422,6 +422,31 @@ export async function deleteServiceContact(vehicleId: string, id: string) {
   await prisma.serviceContact.deleteMany({
     where: { id, garageId: vehicle.garageId },
   });
+  refresh(vehicleId);
+}
+
+// --- Partage du véhicule entre garages ---
+
+export async function shareVehicle(vehicleId: string, garageId: string) {
+  const user = await requireUser();
+  const vehicle = await assertVehicleAccess(user.id, vehicleId);
+  if (!vehicle) return;
+  // On ne partage qu'avec un garage dont l'utilisateur est membre.
+  const userGarages = await getUserGarageIds(user.id);
+  if (!userGarages.includes(garageId) || garageId === vehicle.garageId) return;
+  await prisma.vehicleShare.upsert({
+    where: { vehicleId_garageId: { vehicleId, garageId } },
+    create: { vehicleId, garageId },
+    update: {},
+  });
+  refresh(vehicleId);
+}
+
+export async function unshareVehicle(vehicleId: string, garageId: string) {
+  const user = await requireUser();
+  const vehicle = await assertVehicleAccess(user.id, vehicleId);
+  if (!vehicle) return;
+  await prisma.vehicleShare.deleteMany({ where: { vehicleId, garageId } });
   refresh(vehicleId);
 }
 

@@ -5,8 +5,13 @@ import { prisma } from "@/lib/prisma";
 import { Modal } from "@/components/Modal";
 import { VehicleForm } from "@/components/VehicleForm";
 import { createVehicle } from "@/app/(app)/vehicles/actions";
-import { FUEL_TYPE_LABELS, dueStatus, DUE_STATUS_STYLE } from "@/lib/labels";
-import { formatMileage } from "@/lib/format";
+import {
+  FUEL_TYPE_LABELS,
+  VEHICLE_CATEGORY_ICON,
+  usageUnitLabel,
+  dueStatus,
+  DUE_STATUS_STYLE,
+} from "@/lib/labels";
 
 export default async function DashboardPage() {
   const user = await requireUser();
@@ -81,7 +86,9 @@ export default async function DashboardPage() {
                 className="card block hover:shadow-md"
               >
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">{v.name}</h3>
+                  <h3 className="text-lg font-semibold">
+                    {VEHICLE_CATEGORY_ICON[v.category]} {v.name}
+                  </h3>
                   {status !== "unknown" && (
                     <span className={`badge ${style.className}`}>
                       {style.label}
@@ -98,7 +105,9 @@ export default async function DashboardPage() {
                       ? info.mileage.toLocaleString("fr-FR")
                       : "—"}
                   </span>
-                  <span className="text-xs text-gray-500">km</span>
+                  <span className="text-xs text-gray-500">
+                    {usageUnitLabel(v.usageUnit)}
+                  </span>
                 </div>
                 {v.plate && (
                   <p className="mt-1 text-xs text-gray-400">{v.plate}</p>

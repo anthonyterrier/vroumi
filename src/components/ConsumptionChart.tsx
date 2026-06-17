@@ -12,12 +12,18 @@ import {
 
 export type ConsumptionPoint = { label: string; consumption: number };
 
-export function ConsumptionChart({ points }: { points: ConsumptionPoint[] }) {
+export function ConsumptionChart({
+  points,
+  unitLabel = "L/100 km",
+}: {
+  points: ConsumptionPoint[];
+  unitLabel?: string;
+}) {
   if (points.length < 1) {
     return (
       <p className="py-8 text-center text-sm text-gray-400">
-        Saisissez au moins deux pleins complets avec kilométrage pour calculer
-        la consommation.
+        Saisissez au moins deux pleins complets avec compteur renseigné pour
+        calculer la consommation.
       </p>
     );
   }
@@ -35,7 +41,7 @@ export function ConsumptionChart({ points }: { points: ConsumptionPoint[] }) {
             tickFormatter={(v) => v.toFixed(1)}
           />
           <Tooltip
-            formatter={(v: number) => [`${v.toFixed(1)} L/100 km`, "Consommation"]}
+            formatter={(v: number) => [`${v.toFixed(1)} ${unitLabel}`, "Consommation"]}
             contentStyle={{ fontSize: 12 }}
           />
           <Line

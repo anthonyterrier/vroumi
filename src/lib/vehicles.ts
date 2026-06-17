@@ -12,24 +12,37 @@ export async function getUserGarageIds(userId: string): Promise<string[]> {
   return memberships.map((m) => m.garageId);
 }
 
-/** Liste les véhicules accessibles par l'utilisateur courant. */
+/**
+ * Condition d'accès : véhicule appartenant à l'un des garages de l'utilisateur,
+ * OU partagé avec l'un de ces garages.
+ */
+function accessWhere(garageIds: string[]) {
+  return {
+    OR: [
+      { garageId: { in: garageIds } },
+      { shares: { some: { garageId: { in: garageIds } } } },
+    ],
+  };
+}
+
+/** Liste les véhicules accessibles par l'utilisateur courant (possédés + partagés). */
 export async function getAccessibleVehicles(userId: string) {
   const garageIds = await getUserGarageIds(userId);
   return prisma.vehicle.findMany({
-    where: { garageId: { in: garageIds } },
+    where: accessWhere(garageIds),
     orderBy: { createdAt: "asc" },
   });
 }
 
 /**
- * Charge un véhicule en vérifiant que l'utilisateur courant y a accès.
- * Redirige vers /login si non connecté, renvoie 404 sinon.
+ * Charge un véhicule en vérifiant que l'utilisateur courant y a accès
+ * (propriétaire ou partagé). Redirige vers /login si non connecté, 404 sinon.
  */
 export async function requireVehicle(vehicleId: string) {
   const user = await requireUser();
   const garageIds = await getUserGarageIds(user.id);
   const vehicle = await prisma.vehicle.findFirst({
-    where: { id: vehicleId, garageId: { in: garageIds } },
+    where: { id: vehicleId, ...accessWhere(garageIds) },
   });
   if (!vehicle) notFound();
   return { user, vehicle };
@@ -42,7 +55,7 @@ export async function requireVehicle(vehicleId: string) {
 export async function assertVehicleAccess(userId: string, vehicleId: string) {
   const garageIds = await getUserGarageIds(userId);
   const vehicle = await prisma.vehicle.findFirst({
-    where: { id: vehicleId, garageId: { in: garageIds } },
+    where: { id: vehicleId, ...accessWhere(garageIds) },
   });
   if (!vehicle) {
     redirect("/dashboard");

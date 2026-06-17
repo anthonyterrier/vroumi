@@ -49,6 +49,19 @@ export function formatMileage(km: number | null | undefined): string {
   return `${km.toLocaleString("fr-FR")} km`;
 }
 
+/**
+ * Formate un relevé de compteur selon l'unité du véhicule :
+ * "123 456 km" (route) ou "1 234 h" (heures moteur).
+ */
+export function formatUsage(
+  value: number | null | undefined,
+  unit: string | null | undefined
+): string {
+  if (value == null) return "—";
+  const u = unit === "HOURS" ? "h" : "km";
+  return `${value.toLocaleString("fr-FR")} ${u}`;
+}
+
 /** Formate un montant en euros : 49.9 -> "49,90 €". */
 export function formatEuro(amount: number | null | undefined): string {
   if (amount == null) return "—";

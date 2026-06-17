@@ -1,5 +1,35 @@
 // Libellés français pour les énumérations et utilitaires d'affichage.
 
+export const VEHICLE_CATEGORY_LABELS: Record<string, string> = {
+  CAR: "Voiture",
+  MOTORCYCLE: "Moto / scooter",
+  VAN: "Utilitaire / fourgon",
+  TRUCK: "Camion / poids lourd",
+  TRACTOR: "Tracteur",
+  AGRICULTURAL: "Engin agricole",
+  OTHER: "Autre",
+};
+
+export const VEHICLE_CATEGORY_ICON: Record<string, string> = {
+  CAR: "🚗",
+  MOTORCYCLE: "🏍️",
+  VAN: "🚐",
+  TRUCK: "🚚",
+  TRACTOR: "🚜",
+  AGRICULTURAL: "🚜",
+  OTHER: "🔧",
+};
+
+/** Unité d'usage par défaut suggérée selon la catégorie. */
+export function defaultUsageUnit(category: string): "KM" | "HOURS" {
+  return category === "TRACTOR" || category === "AGRICULTURAL" ? "HOURS" : "KM";
+}
+
+/** Libellé court de l'unité d'usage d'un véhicule : "km" ou "h". */
+export function usageUnitLabel(unit: string | null | undefined): string {
+  return unit === "HOURS" ? "h" : "km";
+}
+
 export const FUEL_TYPE_LABELS: Record<string, string> = {
   GASOLINE: "Essence",
   DIESEL: "Diesel",
