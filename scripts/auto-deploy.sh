@@ -14,7 +14,10 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$HERE/.." && pwd)"
 cd "$PROJECT_DIR"
 
-BRANCH="${DEPLOY_BRANCH:-main}"
+# Branche suivie : DEPLOY_BRANCH si défini, sinon la branche actuellement
+# clonée sur le Pi (ainsi le script marche quel que soit son nom : main,
+# vroumi-deploy…), avec repli sur main.
+BRANCH="${DEPLOY_BRANCH:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)}"
 ts() { date '+%F %T'; }
 
 if ! git fetch --quiet origin "$BRANCH" 2>/dev/null; then
