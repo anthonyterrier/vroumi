@@ -1,6 +1,14 @@
 import Link from "next/link";
-import { requireUser, isAdminUser } from "@/lib/auth";
+import {
+  requireUser,
+  isAdminUser,
+  isImpersonating,
+  getPreviewRole,
+} from "@/lib/auth";
 import { logoutAction } from "@/app/(auth)/actions";
+import { stopLens } from "@/app/(app)/admin/actions";
+import { SubmitButton } from "@/components/SubmitButton";
+import { ROLE_LABELS } from "@/lib/labels";
 
 export default async function AppLayout({
   children,
@@ -9,9 +17,33 @@ export default async function AppLayout({
 }) {
   const user = await requireUser();
   const admin = await isAdminUser(user.id);
+  const [impersonating, previewRole] = await Promise.all([
+    isImpersonating(),
+    getPreviewRole(),
+  ]);
+  const lensLabel = impersonating
+    ? `Vous consultez en tant que ${user.name}`
+    : previewRole
+      ? `Aperçu du rôle « ${ROLE_LABELS[previewRole]} »`
+      : null;
 
   return (
     <div className="min-h-screen">
+      {lensLabel && (
+        <div className="no-print sticky top-0 z-40 flex items-center justify-between gap-3 bg-amber-500 px-4 py-2 text-sm text-white">
+          <span className="font-medium">
+            {lensLabel} · lecture seule
+          </span>
+          <form action={stopLens}>
+            <SubmitButton
+              className="rounded bg-white/20 px-2 py-1 text-xs font-semibold hover:bg-white/30"
+              pendingLabel="…"
+            >
+              Quitter
+            </SubmitButton>
+          </form>
+        </div>
+      )}
       <header className="sticky top-0 z-30 border-b border-gray-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <Link href="/dashboard" className="flex items-center gap-2">

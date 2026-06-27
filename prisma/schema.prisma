@@ -18,13 +18,22 @@ datasource db {
 
 model User {
   id           String       @id @default(cuid())
-  email        String       @unique
+  // E-mail facultatif : un compte peut être créé par l'admin sans e-mail ;
+  // l'utilisateur le renseigne en activant son accès via une invitation.
+  email        String?      @unique
   passwordHash String
   name         String
+  firstName    String? // prénom (champ profil facultatif)
+  lastName     String? // nom (champ profil facultatif)
+  phone        String? // téléphone (champ profil facultatif)
   isAdmin      Boolean      @default(false) // peut créer/gérer les comptes
+  // Compte actif : un compte créé par l'admin sans accès est `false` et passe
+  // à `true` lorsque la personne accepte son invitation (choisit un mot de passe).
+  activated    Boolean      @default(true)
   createdAt    DateTime     @default(now())
   memberships  Membership[]
   invitesSent  Invite[]     @relation("InviteCreatedBy")
+  invitesFor   Invite[]     @relation("InviteTarget")
 }
 
 // Un garage regroupe les personnes qui suivent un ou plusieurs véhicules :
@@ -32,6 +41,8 @@ model User {
 model Garage {
   id          String           @id @default(cuid())
   name        String
+  address     String? // coordonnées facultatives
+  phone       String?
   createdAt   DateTime         @default(now())
   memberships Membership[]
   vehicles    Vehicle[]
@@ -41,9 +52,9 @@ model Garage {
 }
 
 enum Role {
-  OWNER  // accès complet, gestion des membres
-  DRIVER // conducteur / famille : lecture + saisie
-  VIEWER // lecture seule
+  OWNER  // accès complet, gestion des membres (≈ "OWNER")
+  DRIVER // conducteur / famille : vision d'ensemble + saisie, hors finances (≈ "EMPLOYEE")
+  VIEWER // lecture seule minimale, ne voit que l'essentiel (≈ "MEMBER")
 }
 
 model Membership {
@@ -60,19 +71,33 @@ model Membership {
 
 // Invitation créée par un administrateur : l'utilisateur choisit lui-même son
 // mot de passe via le lien (aucun mot de passe n'est défini par l'admin).
+// Si `userId` est défini, l'invitation ACTIVE ce compte existant au lieu d'en
+// créer un nouveau.
 model Invite {
   id          String    @id @default(cuid())
   token       String    @unique
-  email       String
+  email       String?
   name        String
   garage      Garage    @relation(fields: [garageId], references: [id], onDelete: Cascade)
   garageId    String
   role        Role      @default(DRIVER)
   createdBy   User?     @relation("InviteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   createdById String?
+  // Compte existant à activer (créé par l'admin sans accès).
+  user        User?     @relation("InviteTarget", fields: [userId], references: [id], onDelete: Cascade)
+  userId      String?
   createdAt   DateTime  @default(now())
   expiresAt   DateTime
   acceptedAt  DateTime?
+}
+
+// Surcharge en base des droits par défaut d'un rôle. `perms` = JSON (liste des
+// clés de droits accordées, voir src/lib/perms.ts). Si une ligne existe pour un
+// rôle, elle remplace les droits par défaut ; sinon ROLE_DEFAULTS s'applique.
+model RolePerms {
+  role      String   @id // "OWNER" | "DRIVER" | "VIEWER"
+  perms     String   @default("[]")
+  updatedAt DateTime @updatedAt
 }
 
 // --- Véhicule ---

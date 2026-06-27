@@ -6,9 +6,11 @@ import {
   DocumentType,
   ReminderKind,
 } from "@prisma/client";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
+import { requireUser, assertCanWrite } from "@/lib/auth";
 import { assertVehicleAccess, getUserGarageIds } from "@/lib/vehicles";
+import { getVehiclePerms, type PermKey } from "@/lib/perms";
 import { STARTER_SERVICES } from "@/lib/service-catalog";
 
 // --- Helpers de parsing ---
@@ -55,9 +57,20 @@ function enumVal<T extends Record<string, string>>(
     : fallback;
 }
 
-async function guard(vehicleId: string) {
+/**
+ * Garde de mutation : session valide, application non en lecture seule (aucune
+ * lentille admin active), accès au véhicule, ET droit granulaire `perm`.
+ * Renvoie le véhicule (ou redirige si l'accès/droit manque).
+ */
+async function guard(vehicleId: string, perm: PermKey) {
   const user = await requireUser();
-  return assertVehicleAccess(user.id, vehicleId);
+  await assertCanWrite();
+  const vehicle = await assertVehicleAccess(user.id, vehicleId);
+  if (vehicle) {
+    const perms = await getVehiclePerms(user.id, vehicleId);
+    if (!perms[perm]) redirect(`/vehicles/${vehicleId}`);
+  }
+  return vehicle;
 }
 function refresh(vehicleId: string) {
   revalidatePath(`/vehicles/${vehicleId}`, "layout");
@@ -93,7 +106,7 @@ function maintenanceTypes(formData: FormData): {
 }
 
 export async function addMaintenance(vehicleId: string, formData: FormData) {
-  const vehicle = await guard(vehicleId);
+  const vehicle = await guard(vehicleId, "maintenanceAdd");
   const serviceName = optStr(formData.get("serviceName"));
   const mt = maintenanceTypes(formData);
   await prisma.maintenance.create({
@@ -120,7 +133,7 @@ export async function updateMaintenance(
   id: string,
   formData: FormData
 ) {
-  const vehicle = await guard(vehicleId);
+  const vehicle = await guard(vehicleId, "maintenanceEdit");
   const serviceName = optStr(formData.get("serviceName"));
   const mt = maintenanceTypes(formData);
   await prisma.maintenance.updateMany({
@@ -143,7 +156,7 @@ export async function updateMaintenance(
 }
 
 export async function deleteMaintenance(vehicleId: string, id: string) {
-  await guard(vehicleId);
+  await guard(vehicleId, "maintenanceDelete");
   await prisma.maintenance.deleteMany({ where: { id, vehicleId } });
   refresh(vehicleId);
 }
@@ -151,7 +164,7 @@ export async function deleteMaintenance(vehicleId: string, id: string) {
 // --- Réparations ---
 
 export async function addRepair(vehicleId: string, formData: FormData) {
-  const vehicle = await guard(vehicleId);
+  const vehicle = await guard(vehicleId, "repairsAdd");
   const serviceName = optStr(formData.get("serviceName"));
   await prisma.repair.create({
     data: {
@@ -174,7 +187,7 @@ export async function updateRepair(
   id: string,
   formData: FormData
 ) {
-  const vehicle = await guard(vehicleId);
+  const vehicle = await guard(vehicleId, "repairsEdit");
   const serviceName = optStr(formData.get("serviceName"));
   await prisma.repair.updateMany({
     where: { id, vehicleId },
@@ -193,7 +206,7 @@ export async function updateRepair(
 }
 
 export async function deleteRepair(vehicleId: string, id: string) {
-  await guard(vehicleId);
+  await guard(vehicleId, "repairsDelete");
   await prisma.repair.deleteMany({ where: { id, vehicleId } });
   refresh(vehicleId);
 }
@@ -201,7 +214,7 @@ export async function deleteRepair(vehicleId: string, id: string) {
 // --- Carburant ---
 
 export async function addFuel(vehicleId: string, formData: FormData) {
-  await guard(vehicleId);
+  await guard(vehicleId, "fuelAdd");
   const liters = reqFloat(formData.get("liters"));
   const pricePerLiter = optFloat(formData.get("pricePerLiter"));
   let totalCost = optFloat(formData.get("totalCost"));
@@ -229,7 +242,7 @@ export async function updateFuel(
   id: string,
   formData: FormData
 ) {
-  await guard(vehicleId);
+  await guard(vehicleId, "fuelEdit");
   const liters = reqFloat(formData.get("liters"));
   const pricePerLiter = optFloat(formData.get("pricePerLiter"));
   let totalCost = optFloat(formData.get("totalCost"));
@@ -253,7 +266,7 @@ export async function updateFuel(
 }
 
 export async function deleteFuel(vehicleId: string, id: string) {
-  await guard(vehicleId);
+  await guard(vehicleId, "fuelDelete");
   await prisma.fuelEntry.deleteMany({ where: { id, vehicleId } });
   refresh(vehicleId);
 }
@@ -261,7 +274,7 @@ export async function deleteFuel(vehicleId: string, id: string) {
 // --- Relevés kilométriques ---
 
 export async function addMileage(vehicleId: string, formData: FormData) {
-  await guard(vehicleId);
+  await guard(vehicleId, "mileageAdd");
   await prisma.mileageEntry.create({
     data: {
       vehicleId,
@@ -278,7 +291,7 @@ export async function updateMileage(
   id: string,
   formData: FormData
 ) {
-  await guard(vehicleId);
+  await guard(vehicleId, "mileageEdit");
   await prisma.mileageEntry.updateMany({
     where: { id, vehicleId },
     data: {
@@ -291,7 +304,7 @@ export async function updateMileage(
 }
 
 export async function deleteMileage(vehicleId: string, id: string) {
-  await guard(vehicleId);
+  await guard(vehicleId, "mileageDelete");
   await prisma.mileageEntry.deleteMany({ where: { id, vehicleId } });
   refresh(vehicleId);
 }
@@ -299,7 +312,7 @@ export async function deleteMileage(vehicleId: string, id: string) {
 // --- Documents administratifs ---
 
 export async function addDocument(vehicleId: string, formData: FormData) {
-  await guard(vehicleId);
+  await guard(vehicleId, "documentsAdd");
   await prisma.document.create({
     data: {
       vehicleId,
@@ -320,7 +333,7 @@ export async function updateDocument(
   id: string,
   formData: FormData
 ) {
-  await guard(vehicleId);
+  await guard(vehicleId, "documentsEdit");
   await prisma.document.updateMany({
     where: { id, vehicleId },
     data: {
@@ -337,7 +350,7 @@ export async function updateDocument(
 }
 
 export async function deleteDocument(vehicleId: string, id: string) {
-  await guard(vehicleId);
+  await guard(vehicleId, "documentsDelete");
   await prisma.document.deleteMany({ where: { id, vehicleId } });
   refresh(vehicleId);
 }
@@ -345,7 +358,7 @@ export async function deleteDocument(vehicleId: string, id: string) {
 // --- Rappels ---
 
 export async function addReminder(vehicleId: string, formData: FormData) {
-  await guard(vehicleId);
+  await guard(vehicleId, "remindersAdd");
   await prisma.reminder.create({
     data: {
       vehicleId,
@@ -364,7 +377,7 @@ export async function updateReminder(
   id: string,
   formData: FormData
 ) {
-  await guard(vehicleId);
+  await guard(vehicleId, "remindersEdit");
   await prisma.reminder.updateMany({
     where: { id, vehicleId },
     data: {
@@ -383,13 +396,13 @@ export async function toggleReminder(
   id: string,
   done: boolean
 ) {
-  await guard(vehicleId);
+  await guard(vehicleId, "remindersEdit");
   await prisma.reminder.updateMany({ where: { id, vehicleId }, data: { done } });
   refresh(vehicleId);
 }
 
 export async function deleteReminder(vehicleId: string, id: string) {
-  await guard(vehicleId);
+  await guard(vehicleId, "remindersDelete");
   await prisma.reminder.deleteMany({ where: { id, vehicleId } });
   refresh(vehicleId);
 }
@@ -397,7 +410,7 @@ export async function deleteReminder(vehicleId: string, id: string) {
 // --- Catalogue de garages / prestataires (par garage) ---
 
 export async function addServiceContact(vehicleId: string, formData: FormData) {
-  const vehicle = await guard(vehicleId);
+  const vehicle = await guard(vehicleId, "catalogManage");
   const name = String(formData.get("name") ?? "").trim();
   if (!name || !vehicle) return;
   const data = {
@@ -417,7 +430,7 @@ export async function addServiceContact(vehicleId: string, formData: FormData) {
 }
 
 export async function deleteServiceContact(vehicleId: string, id: string) {
-  const vehicle = await guard(vehicleId);
+  const vehicle = await guard(vehicleId, "catalogManage");
   if (!vehicle) return;
   await prisma.serviceContact.deleteMany({
     where: { id, garageId: vehicle.garageId },
@@ -428,9 +441,9 @@ export async function deleteServiceContact(vehicleId: string, id: string) {
 // --- Partage du véhicule entre garages ---
 
 export async function shareVehicle(vehicleId: string, garageId: string) {
-  const user = await requireUser();
-  const vehicle = await assertVehicleAccess(user.id, vehicleId);
+  const vehicle = await guard(vehicleId, "vehiclesEdit");
   if (!vehicle) return;
+  const user = await requireUser();
   // On ne partage qu'avec un garage dont l'utilisateur est membre.
   const userGarages = await getUserGarageIds(user.id);
   if (!userGarages.includes(garageId) || garageId === vehicle.garageId) return;
@@ -443,8 +456,7 @@ export async function shareVehicle(vehicleId: string, garageId: string) {
 }
 
 export async function unshareVehicle(vehicleId: string, garageId: string) {
-  const user = await requireUser();
-  const vehicle = await assertVehicleAccess(user.id, vehicleId);
+  const vehicle = await guard(vehicleId, "vehiclesEdit");
   if (!vehicle) return;
   await prisma.vehicleShare.deleteMany({ where: { vehicleId, garageId } });
   refresh(vehicleId);
@@ -452,7 +464,7 @@ export async function unshareVehicle(vehicleId: string, garageId: string) {
 
 /** Importe la liste de départ d'enseignes dans le catalogue du garage. */
 export async function importStarterServices(vehicleId: string) {
-  const vehicle = await guard(vehicleId);
+  const vehicle = await guard(vehicleId, "catalogManage");
   if (!vehicle) return;
   for (const s of STARTER_SERVICES) {
     await prisma.serviceContact.upsert({

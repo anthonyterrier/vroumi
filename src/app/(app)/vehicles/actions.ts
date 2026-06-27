@@ -4,8 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { FuelType, VehicleCategory, UsageUnit } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
+import { requireUser, assertCanWrite } from "@/lib/auth";
 import { assertVehicleAccess, getUserGarageIds } from "@/lib/vehicles";
+import { garageCan, getVehiclePerms } from "@/lib/perms";
 
 function optString(value: FormDataEntryValue | null): string | null {
   if (value == null) return null;
@@ -57,6 +58,7 @@ const vehicleFields = (formData: FormData) => ({
 
 export async function createVehicle(formData: FormData) {
   const user = await requireUser();
+  await assertCanWrite();
   const data = vehicleFields(formData);
   if (!data.name) return;
 
@@ -70,6 +72,9 @@ export async function createVehicle(formData: FormData) {
       },
     });
     garageId = g.id;
+  } else if (!(await garageCan(user.id, garageId, "vehiclesAdd"))) {
+    // Membre sans droit d'ajout de véhicule dans son garage.
+    redirect("/dashboard");
   }
 
   const vehicle = await prisma.vehicle.create({
@@ -81,7 +86,11 @@ export async function createVehicle(formData: FormData) {
 
 export async function updateVehicle(vehicleId: string, formData: FormData) {
   const user = await requireUser();
+  await assertCanWrite();
   await assertVehicleAccess(user.id, vehicleId);
+  if (!(await getVehiclePerms(user.id, vehicleId)).vehiclesEdit) {
+    redirect(`/vehicles/${vehicleId}`);
+  }
   const data = vehicleFields(formData);
   if (!data.name) return;
 
@@ -92,7 +101,11 @@ export async function updateVehicle(vehicleId: string, formData: FormData) {
 
 export async function deleteVehicle(vehicleId: string) {
   const user = await requireUser();
+  await assertCanWrite();
   await assertVehicleAccess(user.id, vehicleId);
+  if (!(await getVehiclePerms(user.id, vehicleId)).vehiclesDelete) {
+    redirect(`/vehicles/${vehicleId}`);
+  }
   await prisma.vehicle.delete({ where: { id: vehicleId } });
   revalidatePath("/dashboard");
   redirect("/dashboard");

@@ -1,4 +1,5 @@
 import { requireVehicle, currentMileage } from "@/lib/vehicles";
+import { getEffectiveVehiclePerms } from "@/lib/perms";
 import { prisma } from "@/lib/prisma";
 import { CostChart, type CostSlice } from "@/components/CostChart";
 import { PrintButton } from "@/components/PrintButton";
@@ -11,7 +12,21 @@ export default async function CostsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { vehicle } = await requireVehicle(id);
+  const { user, vehicle } = await requireVehicle(id);
+
+  // Module sensible : visible uniquement avec le droit "costsView".
+  const perms = await getEffectiveVehiclePerms(user.id, vehicle.id);
+  if (!perms.costsView) {
+    return (
+      <div className="card text-center text-sm text-gray-500">
+        <p className="font-medium text-gray-700">Accès restreint</p>
+        <p className="mt-1">
+          La synthèse des coûts n&apos;est pas accessible avec votre rôle.
+          Rapprochez-vous du propriétaire du garage.
+        </p>
+      </div>
+    );
+  }
 
   const [maint, repairs, fuel, docs, mileage] = await Promise.all([
     prisma.maintenance.findMany({

@@ -11,18 +11,29 @@ const TABS = [
   { slug: "mileage", label: "Kilométrage" },
   { slug: "documents", label: "Documents" },
   { slug: "reminders", label: "Rappels" },
-  { slug: "costs", label: "Coûts" },
-  { slug: "edit", label: "Profil" },
+  { slug: "costs", label: "Coûts", perm: "costs" as const },
+  { slug: "edit", label: "Profil", perm: "edit" as const },
 ];
 
-export function VehicleTabs({ vehicleId }: { vehicleId: string }) {
+export function VehicleTabs({
+  vehicleId,
+  canViewCosts = true,
+  canEdit = true,
+}: {
+  vehicleId: string;
+  canViewCosts?: boolean;
+  canEdit?: boolean;
+}) {
   const pathname = usePathname();
   const base = `/vehicles/${vehicleId}`;
+  const tabs = TABS.filter((t) =>
+    t.perm === "costs" ? canViewCosts : t.perm === "edit" ? canEdit : true
+  );
 
   return (
     <nav className="-mx-4 mb-4 overflow-x-auto px-4">
       <div className="flex gap-1 border-b border-gray-200 pb-px">
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const href = tab.slug ? `${base}/${tab.slug}` : base;
           const active =
             tab.slug === ""

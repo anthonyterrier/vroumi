@@ -25,6 +25,38 @@ async function main() {
 
   const garageId = user.memberships[0].garageId;
 
+  // Quelques membres de rôles variés dans le garage de démo.
+  const members: { email: string; name: string; role: "DRIVER" | "VIEWER" }[] =
+    [
+      { email: "conducteur@vroumi.app", name: "Camille (conducteur)", role: "DRIVER" },
+      { email: "lecture@vroumi.app", name: "Dominique (lecture seule)", role: "VIEWER" },
+    ];
+  for (const m of members) {
+    const memberHash = await bcrypt.hash("demo1234", 10);
+    const u = await prisma.user.upsert({
+      where: { email: m.email },
+      update: {},
+      create: { email: m.email, name: m.name, passwordHash: memberHash },
+    });
+    await prisma.membership.upsert({
+      where: { userId_garageId: { userId: u.id, garageId } },
+      create: { userId: u.id, garageId, role: m.role },
+      update: { role: m.role },
+    });
+  }
+
+  // Exemple de compte créé sans accès (à activer via une invitation).
+  await prisma.user.upsert({
+    where: { email: "invite@vroumi.app" },
+    update: {},
+    create: {
+      email: "invite@vroumi.app",
+      name: "Alex (sans accès)",
+      passwordHash: await bcrypt.hash(Math.random().toString(36).slice(2), 10),
+      activated: false,
+    },
+  });
+
   // Évite de dupliquer si le seed est relancé.
   const existing = await prisma.vehicle.findFirst({ where: { garageId } });
   if (existing) {

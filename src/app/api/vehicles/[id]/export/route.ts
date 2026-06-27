@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireVehicle } from "@/lib/vehicles";
+import { getVehiclePerms } from "@/lib/perms";
 import { prisma } from "@/lib/prisma";
 import {
   maintenanceTypeLabel,
@@ -23,7 +24,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const { vehicle } = await requireVehicle(id);
+  const { user, vehicle } = await requireVehicle(id);
+
+  // L'export contient les coûts : réservé au droit "costsView".
+  if (!(await getVehiclePerms(user.id, vehicle.id)).costsView) {
+    return new NextResponse("Accès restreint", { status: 403 });
+  }
 
   const [maint, repairs, fuel, docs, mileage] = await Promise.all([
     prisma.maintenance.findMany({
