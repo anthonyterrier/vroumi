@@ -163,6 +163,12 @@ enum MaintenanceType {
   LIQUIDE_REFROIDISSEMENT// Liquide de refroidissement
   ESSUIE_GLACE           // Balais d'essuie-glace
   REVISION               // Révision générale (constructeur)
+  LAVAGE_EXTERIEUR       // Lavage extérieur (carrosserie)
+  LAVAGE_INTERIEUR       // Lavage / nettoyage intérieur
+  LAVAGE_SIEGES          // Nettoyage des sièges
+  NETTOYAGE_JANTES       // Nettoyage des jantes
+  POLISSAGE              // Polissage / lustrage carrosserie
+  DESINFECTION           // Désinfection habitacle
   AUTRE
 }
 

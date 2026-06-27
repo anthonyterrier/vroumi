@@ -57,6 +57,12 @@ export const MAINTENANCE_TYPE_LABELS: Record<string, string> = {
   LIQUIDE_REFROIDISSEMENT: "Liquide de refroidissement",
   ESSUIE_GLACE: "Essuie-glaces",
   REVISION: "Révision générale",
+  LAVAGE_EXTERIEUR: "Lavage extérieur",
+  LAVAGE_INTERIEUR: "Lavage intérieur",
+  LAVAGE_SIEGES: "Nettoyage des sièges",
+  NETTOYAGE_JANTES: "Nettoyage des jantes",
+  POLISSAGE: "Polissage / lustrage",
+  DESINFECTION: "Désinfection habitacle",
   AUTRE: "Autre",
 };
 
@@ -102,6 +108,12 @@ export const MAINTENANCE_TYPE_ICON: Record<string, string> = {
   LIQUIDE_REFROIDISSEMENT: "🌡️",
   ESSUIE_GLACE: "🌧️",
   REVISION: "🔧",
+  LAVAGE_EXTERIEUR: "🚿",
+  LAVAGE_INTERIEUR: "🧹",
+  LAVAGE_SIEGES: "💺",
+  NETTOYAGE_JANTES: "✨",
+  POLISSAGE: "🪞",
+  DESINFECTION: "🧼",
   AUTRE: "🔧",
 };
 
