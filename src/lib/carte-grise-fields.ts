@@ -38,31 +38,37 @@ export const FUEL_VALUES = [
   "OTHER",
 ] as const;
 
+// Champs tolérants : `.catch(null)` ramène à null tout champ manquant ou mal
+// typé (le JSON vient d'un LLM, pas d'un schéma strict) ; les entiers sont
+// coercés ("1598" → 1598). null reste null (nullable court-circuite la coercion).
+const str = () => z.string().nullable().catch(null);
+const int = () => z.coerce.number().int().nullable().catch(null);
+
 export const ExtractionSchema = z.object({
-  make: z.string().nullable(), // D.1
-  model: z.string().nullable(), // D.3
-  vehicleType: z.string().nullable(), // D.2
-  plate: z.string().nullable(), // A
-  vin: z.string().nullable(), // E
-  year: z.number().int().nullable(), // B (année)
-  firstRegistrationDate: z.string().nullable(), // B (AAAA-MM-JJ)
-  registrationDate: z.string().nullable(), // I (AAAA-MM-JJ)
-  fuelType: z.enum(FUEL_VALUES).nullable(), // P.3
-  displacementCc: z.number().int().nullable(), // P.1
-  powerKw: z.number().int().nullable(), // P.2
-  fiscalPower: z.number().int().nullable(), // P.6
-  seats: z.number().int().nullable(), // S.1
-  co2: z.number().int().nullable(), // V.7
-  emissionClass: z.string().nullable(), // V.9
-  massInService: z.number().int().nullable(), // G
-  maxLadenMass: z.number().int().nullable(), // F.2
-  categoryEu: z.string().nullable(), // J
-  nationalType: z.string().nullable(), // J.1
-  bodyworkCe: z.string().nullable(), // J.2
-  bodyworkNational: z.string().nullable(), // J.3
-  typeApprovalNumber: z.string().nullable(), // K
-  holderName: z.string().nullable(), // C.1
-  holderAddress: z.string().nullable(), // C.3
+  make: str(), // D.1
+  model: str(), // D.3
+  vehicleType: str(), // D.2
+  plate: str(), // A
+  vin: str(), // E
+  year: int(), // B (année)
+  firstRegistrationDate: str(), // B (AAAA-MM-JJ)
+  registrationDate: str(), // I (AAAA-MM-JJ)
+  fuelType: z.enum(FUEL_VALUES).nullable().catch(null), // P.3
+  displacementCc: int(), // P.1
+  powerKw: int(), // P.2
+  fiscalPower: int(), // P.6
+  seats: int(), // S.1
+  co2: int(), // V.7
+  emissionClass: str(), // V.9
+  massInService: int(), // G
+  maxLadenMass: int(), // F.2
+  categoryEu: str(), // J
+  nationalType: str(), // J.1
+  bodyworkCe: str(), // J.2
+  bodyworkNational: str(), // J.3
+  typeApprovalNumber: str(), // K
+  holderName: str(), // C.1
+  holderAddress: str(), // C.3
 });
 
 export type CarteGriseFields = z.infer<typeof ExtractionSchema>;

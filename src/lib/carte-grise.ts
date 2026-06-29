@@ -2,9 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import {
   ExtractionSchema,
-  CARTE_GRISE_FIELDS,
   EMPTY_FIELDS,
-  FUEL_VALUES,
   isAcceptedImageType,
   isPdf,
   type CarteGriseFields,
@@ -15,40 +13,11 @@ export const CARTE_GRISE_AI_ENABLED = !!process.env.ANTHROPIC_API_KEY;
 
 type ImageMediaType = "image/jpeg" | "image/png" | "image/webp";
 
-// Schéma JSON équivalent passé à l'API (sortie structurée). zod v3 du projet
-// n'est pas compatible avec le helper zodOutputFormat du SDK : on décrit le
-// schéma à la main et on valide la réponse avec zod.
-const JSON_SCHEMA: { [key: string]: unknown } = (() => {
-  // Champ nullable exprimé en `anyOf` (forme supportée par les structured
-  // outputs), plutôt qu'un `type: [..., "null"]` qui peut être refusé.
-  const nullable = (base: Record<string, unknown>) => ({
-    anyOf: [base, { type: "null" }],
-  });
-  const properties: Record<string, unknown> = {};
-  for (const f of CARTE_GRISE_FIELDS) {
-    if (f.key === "fuelType") {
-      properties[f.key] = nullable({ type: "string", enum: [...FUEL_VALUES] });
-    } else if (f.type === "int") {
-      properties[f.key] = nullable({ type: "integer" });
-    } else if (f.type === "date") {
-      properties[f.key] = nullable({
-        type: "string",
-        description: "Format AAAA-MM-JJ",
-      });
-    } else {
-      properties[f.key] = nullable({ type: "string" });
-    }
-  }
-  return {
-    type: "object",
-    additionalProperties: false,
-    required: CARTE_GRISE_FIELDS.map((f) => f.key),
-    properties,
-  };
-})();
-
+// NB : on n'utilise PAS les "structured outputs" (output_config.format) — ils
+// sont limités à 16 paramètres de type union/nullable, or on a 24 champs tous
+// facultatifs. On demande donc un JSON libre et on le valide avec zod.
 const PROMPT = `Tu analyses une carte grise française (certificat d'immatriculation), fournie en image ou en PDF.
-Extrais tous les champs ci-dessous d'après leurs repères normalisés. Mets null pour tout champ illisible, absent ou incertain — n'invente jamais de valeur.
+Extrais les champs ci-dessous d'après leurs repères normalisés. Mets null pour tout champ illisible, absent ou incertain — n'invente jamais de valeur.
 - make : marque (D.1), ex. "Renault".
 - model : dénomination commerciale / modèle (D.3).
 - vehicleType : type, variante, version (D.2).
@@ -72,11 +41,31 @@ Extrais tous les champs ci-dessous d'après leurs repères normalisés. Mets nul
 - bodyworkNational : carrosserie, désignation nationale (J.3).
 - typeApprovalNumber : numéro de réception par type (K).
 - holderName : nom du titulaire (C.1).
-- holderAddress : adresse du titulaire (C.3).`;
+- holderAddress : adresse du titulaire (C.3).
+
+Réponds UNIQUEMENT avec un objet JSON valide contenant exactement ces clés (pas de texte, pas de balises markdown, pas de \`\`\`). Les entiers sans guillemets ; null sans guillemets.`;
+
+/** Extrait le premier objet JSON d'un texte (tolère un éventuel habillage). */
+function extractJsonObject(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      try {
+        return JSON.parse(text.slice(start, end + 1));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
 
 /**
- * Analyse une image de carte grise avec Claude (vision) et renvoie les champs
- * détectés. Lève si la clé API est absente.
+ * Analyse une image ou un PDF de carte grise avec Claude (vision) et renvoie les
+ * champs détectés. Lève si la clé API est absente.
  */
 export async function extractCarteGrise(
   file: Buffer,
@@ -115,7 +104,6 @@ export async function extractCarteGrise(
         content: [sourceBlock, { type: "text", text: PROMPT }],
       },
     ],
-    output_config: { format: { type: "json_schema", schema: JSON_SCHEMA } },
   });
 
   const text = message.content
@@ -124,12 +112,8 @@ export async function extractCarteGrise(
     .join("")
     .trim();
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return EMPTY_FIELDS;
-  }
+  const parsed = extractJsonObject(text);
+  if (parsed == null) return EMPTY_FIELDS;
   const result = ExtractionSchema.safeParse(parsed);
   return result.success ? result.data : EMPTY_FIELDS;
 }
