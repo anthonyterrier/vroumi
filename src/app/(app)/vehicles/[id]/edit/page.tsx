@@ -1,6 +1,11 @@
 import { requireVehicle, getUserGarageIds } from "@/lib/vehicles";
 import { getEffectiveVehiclePerms } from "@/lib/perms";
 import { CARTE_GRISE_AI_ENABLED } from "@/lib/carte-grise";
+import {
+  parseStoredExtraction,
+  CARTE_GRISE_FIELDS,
+  formatFieldValue,
+} from "@/lib/carte-grise-fields";
 import { prisma } from "@/lib/prisma";
 import { Modal } from "@/components/Modal";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -34,9 +39,23 @@ export default async function EditVehiclePage({
     getEffectiveVehiclePerms(user.id, vehicle.id),
     prisma.vehicleRegistration.findUnique({
       where: { vehicleId: vehicle.id },
-      select: { updatedAt: true },
+      select: { updatedAt: true, extracted: true },
     }),
   ]);
+
+  // Aperçu (dernière analyse) + données carte grise déjà enregistrées (hors
+  // champs de base déjà présents dans le formulaire ci-dessus).
+  const previewFields = parseStoredExtraction(registration?.extracted);
+  const CORE_KEYS = new Set(["make", "model", "plate", "vin", "year", "fuelType"]);
+  const vehicleRecord = vehicle as unknown as Record<string, unknown>;
+  const storedInfo = CARTE_GRISE_FIELDS.filter(
+    (f) => !CORE_KEYS.has(f.key)
+  )
+    .map((f) => ({
+      label: f.label,
+      value: formatFieldValue(f.key, vehicleRecord[f.key]),
+    }))
+    .filter((i) => i.value !== "—");
 
   // Garages de l'utilisateur (hors propriétaire) proposables au partage.
   const myGarages = await prisma.garage.findMany({
@@ -69,6 +88,8 @@ export default async function EditVehiclePage({
             imageVersion={registration ? registration.updatedAt.getTime() : null}
             aiEnabled={CARTE_GRISE_AI_ENABLED}
             canManage={perms.registrationManage}
+            previewFields={previewFields}
+            storedInfo={storedInfo}
           />
         </section>
       )}

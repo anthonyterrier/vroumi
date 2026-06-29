@@ -145,6 +145,29 @@ model Vehicle {
   tankCapacity  Float? // capacité du réservoir (L), pour info
   initialMileage Int? // compteur (km ou h) à l'achat / création du profil
   notes         String?
+
+  // --- Données issues de la carte grise (certificat d'immatriculation) ---
+  // Repères normalisés entre parenthèses. Tous facultatifs ; alimentés depuis
+  // la photo de carte grise (analyse IA, après validation champ par champ).
+  vehicleType         String? // D.2 — type, variante, version
+  firstRegistrationDate DateTime? // B — date de 1re mise en circulation
+  registrationDate    DateTime? // I — date du certificat
+  displacementCc      Int? // P.1 — cylindrée (cm³)
+  powerKw             Int? // P.2 — puissance nette maximale (kW)
+  fiscalPower         Int? // P.6 — puissance administrative (CV fiscaux)
+  seats               Int? // S.1 — nombre de places assises
+  co2                 Int? // V.7 — émissions de CO2 (g/km)
+  emissionClass       String? // V.9 — classe environnementale (norme Euro)
+  massInService       Int? // G — masse en service / poids à vide (kg)
+  maxLadenMass        Int? // F.2 — masse en charge max admissible en service (kg)
+  categoryEu          String? // J — catégorie du véhicule (CE)
+  nationalType        String? // J.1 — genre national (VP, CTTE…)
+  bodyworkCe          String? // J.2 — carrosserie (CE)
+  bodyworkNational    String? // J.3 — carrosserie (désignation nationale)
+  typeApprovalNumber  String? // K — numéro de réception par type
+  holderName          String? // C.1 — nom du titulaire
+  holderAddress       String? // C.3 — adresse du titulaire
+
   createdAt     DateTime        @default(now())
 
   maintenances  Maintenance[]
@@ -167,6 +190,10 @@ model VehicleRegistration {
   data      Bytes // contenu de l'image
   mimeType  String // ex. image/jpeg
   fileName  String?
+  // Dernier résultat d'analyse IA (JSON des champs détectés) + horodatage,
+  // conservé pour proposer un aperçu/validation et garder une trace brute.
+  extracted   String?
+  extractedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

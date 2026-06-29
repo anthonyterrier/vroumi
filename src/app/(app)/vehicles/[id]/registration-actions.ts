@@ -7,15 +7,20 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, assertCanWrite } from "@/lib/auth";
 import { assertVehicleAccess } from "@/lib/vehicles";
 import { getVehiclePerms } from "@/lib/perms";
+import { extractCarteGrise, CARTE_GRISE_AI_ENABLED } from "@/lib/carte-grise";
 import {
-  extractCarteGrise,
   isAcceptedImageType,
-  CARTE_GRISE_AI_ENABLED,
-} from "@/lib/carte-grise";
+  parseStoredExtraction,
+  CARTE_GRISE_FIELDS,
+  type CarteGriseFields,
+  type CarteGriseFieldKey,
+} from "@/lib/carte-grise-fields";
 
 const MAX_BYTES = 8 * 1024 * 1024; // 8 Mo
 
-export type RegistrationState = { error?: string; message?: string } | undefined;
+export type RegistrationState =
+  | { error?: string; message?: string; fields?: CarteGriseFields }
+  | undefined;
 
 /**
  * Garde : session valide, application non en lecture seule, accès au véhicule,
@@ -48,20 +53,27 @@ export async function uploadRegistration(
   if (!isAcceptedImageType(file.type)) return;
 
   const bytes = Buffer.from(await file.arrayBuffer());
-  const data = {
-    data: bytes,
-    mimeType: file.type,
-    fileName: file.name || null,
-  };
   await prisma.vehicleRegistration.upsert({
     where: { vehicleId },
-    create: { vehicleId, ...data },
-    update: data,
+    create: {
+      vehicleId,
+      data: bytes,
+      mimeType: file.type,
+      fileName: file.name || null,
+    },
+    // Nouvelle photo → l'ancienne analyse n'est plus pertinente.
+    update: {
+      data: bytes,
+      mimeType: file.type,
+      fileName: file.name || null,
+      extracted: null,
+      extractedAt: null,
+    },
   });
   refresh(vehicleId);
 }
 
-/** Supprime la photo de la carte grise. */
+/** Supprime la photo de la carte grise (et son analyse). */
 export async function deleteRegistration(vehicleId: string) {
   await guardManage(vehicleId);
   await prisma.vehicleRegistration.deleteMany({ where: { vehicleId } });
@@ -69,9 +81,10 @@ export async function deleteRegistration(vehicleId: string) {
 }
 
 /**
- * Analyse la photo de la carte grise avec l'IA et pré-remplit les champs encore
- * vides du profil véhicule (n'écrase pas une valeur déjà saisie). Pensée pour
- * `useActionState` : `analyzeRegistration.bind(null, vehicleId)`.
+ * Analyse la photo avec l'IA, conserve le résultat (JSON) et le renvoie pour
+ * affichage. N'applique RIEN au profil — l'utilisateur valide ensuite champ par
+ * champ via applyRegistrationFields. Pensée pour `useActionState` :
+ * `analyzeRegistration.bind(null, vehicleId)`.
  */
 export async function analyzeRegistration(
   vehicleId: string,
@@ -81,7 +94,7 @@ export async function analyzeRegistration(
   if (!CARTE_GRISE_AI_ENABLED) {
     return { error: "L'analyse IA n'est pas configurée sur ce serveur." };
   }
-  const vehicle = await guardManage(vehicleId);
+  await guardManage(vehicleId);
 
   const reg = await prisma.vehicleRegistration.findUnique({
     where: { vehicleId },
@@ -90,50 +103,78 @@ export async function analyzeRegistration(
     return { error: "Aucune photo de carte grise à analyser." };
   }
 
-  let fields;
+  let fields: CarteGriseFields;
   try {
     fields = await extractCarteGrise(Buffer.from(reg.data), reg.mimeType);
   } catch {
-    return {
-      error: "L'analyse a échoué. Réessayez avec une photo plus nette.",
-    };
+    return { error: "L'analyse a échoué. Réessayez avec une photo plus nette." };
   }
 
-  // On ne remplit que les champs encore vides (non destructif).
-  const data: Record<string, unknown> = {};
-  const filled: string[] = [];
-  const setIfEmpty = (
-    key: "make" | "model" | "plate" | "vin",
-    value: string | null,
-    label: string
-  ) => {
-    if (value && !vehicle[key]) {
-      data[key] = value;
-      filled.push(label);
-    }
-  };
-  setIfEmpty("make", fields.make, "marque");
-  setIfEmpty("model", fields.model, "modèle");
-  setIfEmpty("plate", fields.plate, "immatriculation");
-  setIfEmpty("vin", fields.vin, "VIN");
-  if (fields.year && !vehicle.year) {
-    data.year = fields.year;
-    filled.push("année");
-  }
-  if (fields.fuelType && vehicle.fuelType === FuelType.GASOLINE) {
-    // GASOLINE est la valeur par défaut : on la considère comme « non renseignée ».
-    data.fuelType = fields.fuelType as FuelType;
-    filled.push("carburant");
-  }
-
-  if (Object.keys(data).length === 0) {
-    return {
-      message:
-        "Aucun nouveau champ détecté (les informations sont peut-être déjà renseignées).",
-    };
-  }
-
-  await prisma.vehicle.update({ where: { id: vehicleId }, data });
+  await prisma.vehicleRegistration.update({
+    where: { vehicleId },
+    data: { extracted: JSON.stringify(fields), extractedAt: new Date() },
+  });
   refresh(vehicleId);
-  return { message: `Champs pré-remplis : ${filled.join(", ")}.` };
+
+  const count = CARTE_GRISE_FIELDS.filter(
+    (f) => fields[f.key] != null
+  ).length;
+  if (count === 0) {
+    return {
+      fields,
+      error: "Aucune information exploitable n'a été détectée sur la photo.",
+    };
+  }
+  return {
+    fields,
+    message: `${count} champ(s) détecté(s). Cochez ceux à appliquer au profil.`,
+  };
+}
+
+/**
+ * Applique au profil les champs cochés dans l'aperçu. Les valeurs proviennent de
+ * la dernière analyse stockée (on ne fait pas confiance aux valeurs du client) ;
+ * le formulaire n'envoie que la liste des clés cochées (`apply`).
+ */
+export async function applyRegistrationFields(
+  vehicleId: string,
+  formData: FormData
+) {
+  await guardManage(vehicleId);
+
+  const reg = await prisma.vehicleRegistration.findUnique({
+    where: { vehicleId },
+    select: { extracted: true },
+  });
+  const fields = parseStoredExtraction(reg?.extracted);
+  if (!fields) redirect(`/vehicles/${vehicleId}/edit`);
+
+  const selected = new Set(formData.getAll("apply").map(String));
+  const data: Record<string, unknown> = {};
+
+  for (const field of CARTE_GRISE_FIELDS) {
+    if (!selected.has(field.key)) continue;
+    const value = fields[field.key as CarteGriseFieldKey];
+    if (value == null) continue;
+
+    if (field.type === "int") {
+      const n = typeof value === "number" ? value : parseInt(String(value), 10);
+      if (!Number.isNaN(n)) data[field.key] = n;
+    } else if (field.type === "date") {
+      const d = new Date(String(value));
+      if (!Number.isNaN(d.getTime())) data[field.key] = d;
+    } else if (field.type === "fuel") {
+      if ((Object.values(FuelType) as string[]).includes(String(value))) {
+        data[field.key] = value as FuelType;
+      }
+    } else {
+      data[field.key] = String(value);
+    }
+  }
+
+  if (Object.keys(data).length > 0) {
+    await prisma.vehicle.update({ where: { id: vehicleId }, data });
+  }
+  refresh(vehicleId);
+  redirect(`/vehicles/${vehicleId}/edit`);
 }
