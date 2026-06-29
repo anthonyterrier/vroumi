@@ -219,6 +219,7 @@ enum MaintenanceType {
   FILTRE_HABITACLE       // Filtre habitacle / pollen
   FILTRE_CARBURANT       // Filtre à carburant
   FREINS                 // Plaquettes / disques de frein
+  LIQUIDE_DE_FREIN       // Purge du liquide de frein
   PNEUS                  // Pneumatiques
   COURROIE_DISTRIBUTION  // Courroie de distribution
   COURROIE_ACCESSOIRE    // Courroie d'accessoires

@@ -13,11 +13,16 @@ import {
 import {
   MAINTENANCE_TYPE_LABELS,
   MAINTENANCE_TYPE_ICON,
+  FUEL_TYPE_LABELS,
   maintenanceTypeKeys,
   maintenanceTypeLabel,
   usageUnitLabel,
 } from "@/lib/labels";
-import { MAINTENANCE_DISCLAIMER } from "@/lib/maintenance-intervals";
+import {
+  MAINTENANCE_DISCLAIMER,
+  intervalsForVehicle,
+  formatInterval,
+} from "@/lib/maintenance-intervals";
 import { formatDate, formatUsage, formatEuro } from "@/lib/format";
 import type { Maintenance } from "@prisma/client";
 
@@ -166,6 +171,34 @@ export default async function MaintenancePage({
           </form>
         </Modal>
       </div>
+
+      <details className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+        <summary className="cursor-pointer font-medium text-gray-700">
+          Rythmes d&apos;entretien indicatifs ·{" "}
+          {FUEL_TYPE_LABELS[vehicle.fuelType] ?? "véhicule"}
+        </summary>
+        <ul className="mt-2 space-y-1">
+          {Object.entries(intervalsForVehicle(vehicle.fuelType)).map(
+            ([type, interval]) => (
+              <li
+                key={type}
+                className="flex justify-between gap-2 text-gray-600"
+              >
+                <span>
+                  {MAINTENANCE_TYPE_ICON[type]}{" "}
+                  {MAINTENANCE_TYPE_LABELS[type] ?? type}
+                </span>
+                <span className="text-right text-gray-500">
+                  {formatInterval(interval, vehicle.usageUnit)}
+                </span>
+              </li>
+            )
+          )}
+        </ul>
+        <p className="mt-2 text-[11px] text-gray-400">
+          {MAINTENANCE_DISCLAIMER}
+        </p>
+      </details>
 
       <div className="space-y-2">
         {items.length === 0 && (
