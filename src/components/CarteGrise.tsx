@@ -13,6 +13,7 @@ import {
 import {
   CARTE_GRISE_FIELDS,
   formatFieldValue,
+  isPdf,
   type CarteGriseFields,
 } from "@/lib/carte-grise-fields";
 
@@ -24,6 +25,7 @@ import {
 export function CarteGrise({
   vehicleId,
   imageVersion,
+  mimeType,
   aiEnabled,
   canManage,
   previewFields,
@@ -31,12 +33,14 @@ export function CarteGrise({
 }: {
   vehicleId: string;
   imageVersion: number | null;
+  mimeType: string | null;
   aiEnabled: boolean;
   canManage: boolean;
   previewFields: CarteGriseFields | null;
   storedInfo: { label: string; value: string }[];
 }) {
   const hasImage = imageVersion != null;
+  const fileUrl = `/api/vehicles/${vehicleId}/carte-grise?v=${imageVersion}`;
   const [state, analyzeAction] = useActionState<RegistrationState, FormData>(
     analyzeRegistration.bind(null, vehicleId),
     undefined
@@ -52,18 +56,36 @@ export function CarteGrise({
     <div className="card space-y-4">
       <p className="text-sm text-gray-500">
         Document confidentiel, visible uniquement par le propriétaire du
-        véhicule. L&apos;analyse IA lit la photo, puis vous validez champ par
-        champ les informations à enregistrer dans le profil.
+        véhicule. L&apos;analyse IA lit la photo ou le PDF, puis vous validez
+        champ par champ les informations à enregistrer dans le profil.
       </p>
 
       {hasImage && (
         <div className="space-y-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={`/api/vehicles/${vehicleId}/carte-grise?v=${imageVersion}`}
-            alt="Carte grise"
-            className="max-h-72 w-full rounded-lg border border-gray-200 object-contain"
-          />
+          {isPdf(mimeType) ? (
+            <div className="space-y-1">
+              <iframe
+                title="Carte grise (PDF)"
+                src={fileUrl}
+                className="h-96 w-full rounded-lg border border-gray-200"
+              />
+              <a
+                href={fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-brand-600 hover:underline"
+              >
+                Ouvrir le PDF dans un nouvel onglet
+              </a>
+            </div>
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={fileUrl}
+              alt="Carte grise"
+              className="max-h-72 w-full rounded-lg border border-gray-200 object-contain"
+            />
+          )}
           {canManage && (
             <div className="flex flex-wrap items-center gap-3">
               <form action={analyzeAction}>
@@ -158,20 +180,20 @@ export function CarteGrise({
           className="space-y-2"
         >
           <label className="label">
-            {hasImage ? "Remplacer la photo" : "Ajouter une photo"}{" "}
+            {hasImage ? "Remplacer le document" : "Ajouter une photo ou un PDF"}{" "}
             <span className="font-normal text-gray-400">
-              (JPEG, PNG ou WebP, 8 Mo max)
+              (JPEG, PNG, WebP ou PDF, 8 Mo max)
             </span>
           </label>
           <input
             type="file"
             name="file"
-            accept="image/jpeg,image/png,image/webp"
+            accept="image/jpeg,image/png,image/webp,application/pdf"
             className="input"
             required
           />
           <SubmitButton className="btn-secondary" pendingLabel="Envoi…">
-            Envoyer la photo
+            Envoyer le document
           </SubmitButton>
         </form>
       ) : (

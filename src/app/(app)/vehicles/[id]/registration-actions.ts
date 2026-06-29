@@ -9,7 +9,7 @@ import { assertVehicleAccess } from "@/lib/vehicles";
 import { getVehiclePerms } from "@/lib/perms";
 import { extractCarteGrise, CARTE_GRISE_AI_ENABLED } from "@/lib/carte-grise";
 import {
-  isAcceptedImageType,
+  isAcceptedUploadType,
   parseStoredExtraction,
   CARTE_GRISE_FIELDS,
   type CarteGriseFields,
@@ -50,7 +50,7 @@ export async function uploadRegistration(
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return;
   if (file.size > MAX_BYTES) return;
-  if (!isAcceptedImageType(file.type)) return;
+  if (!isAcceptedUploadType(file.type)) return;
 
   const bytes = Buffer.from(await file.arrayBuffer());
   await prisma.vehicleRegistration.upsert({
