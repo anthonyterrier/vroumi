@@ -120,6 +120,8 @@ export const PERM_MODULE_LABELS: Record<string, string> = {
   costsView: "Voir la synthèse des coûts (finances)",
   membersManage: "Gérer les membres du garage",
   catalogManage: "Gérer le catalogue des prestataires",
+  registrationView: "Voir la carte grise (propriétaire)",
+  registrationManage: "Gérer la carte grise (photo + analyse IA)",
 };
 
 /** Suffixe d'action d'une clé CRUD : "maintenanceEdit" → "Edit". */

@@ -55,6 +55,8 @@ export const PERM_KEYS = [
   "costsView", // synthèse financière (sensible)
   "membersManage", // gestion des membres du garage
   "catalogManage", // catalogue des prestataires
+  "registrationView", // voir la photo de la carte grise (propriétaire)
+  "registrationManage", // envoyer/supprimer la carte grise + analyse IA
 ] as const;
 
 export type PermKey = (typeof PERM_KEYS)[number];
@@ -193,6 +195,8 @@ export const PERM_MODULE_KEYS: PermKey[] = [
   "costsView",
   "membersManage",
   "catalogManage",
+  "registrationView",
+  "registrationManage",
 ];
 
 // --- Contrôles d'accès au niveau du garage -------------------------------
