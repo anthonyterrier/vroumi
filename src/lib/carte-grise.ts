@@ -6,6 +6,7 @@ import {
   EMPTY_FIELDS,
   FUEL_VALUES,
   isAcceptedImageType,
+  isPdf,
   type CarteGriseFields,
 } from "@/lib/carte-grise-fields";
 
@@ -41,7 +42,7 @@ const JSON_SCHEMA: { [key: string]: unknown } = (() => {
   };
 })();
 
-const PROMPT = `Tu analyses la photo d'une carte grise française (certificat d'immatriculation).
+const PROMPT = `Tu analyses une carte grise française (certificat d'immatriculation), fournie en image ou en PDF.
 Extrais tous les champs ci-dessous d'après leurs repères normalisés. Mets null pour tout champ illisible, absent ou incertain — n'invente jamais de valeur.
 - make : marque (D.1), ex. "Renault".
 - model : dénomination commerciale / modèle (D.3).
@@ -73,15 +74,31 @@ Extrais tous les champs ci-dessous d'après leurs repères normalisés. Mets nul
  * détectés. Lève si la clé API est absente.
  */
 export async function extractCarteGrise(
-  image: Buffer,
+  file: Buffer,
   mimeType: string
 ): Promise<CarteGriseFields> {
   if (!CARTE_GRISE_AI_ENABLED) {
     throw new Error("Analyse IA non configurée (clé API manquante).");
   }
-  const mediaType: ImageMediaType = isAcceptedImageType(mimeType)
-    ? mimeType
-    : "image/jpeg";
+  const data = file.toString("base64");
+
+  // PDF → bloc "document" ; image → bloc "image". Le bloc est placé avant le
+  // texte (recommandation API pour les documents).
+  const sourceBlock: Anthropic.ContentBlockParam = isPdf(mimeType)
+    ? {
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data },
+      }
+    : {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: isAcceptedImageType(mimeType)
+            ? (mimeType as ImageMediaType)
+            : "image/jpeg",
+          data,
+        },
+      };
 
   const client = new Anthropic();
   const message = await client.messages.create({
@@ -90,17 +107,7 @@ export async function extractCarteGrise(
     messages: [
       {
         role: "user",
-        content: [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: mediaType,
-              data: image.toString("base64"),
-            },
-          },
-          { type: "text", text: PROMPT },
-        ],
+        content: [sourceBlock, { type: "text", text: PROMPT }],
       },
     ],
     output_config: { format: { type: "json_schema", schema: JSON_SCHEMA } },

@@ -15,6 +15,20 @@ export function isAcceptedImageType(
   return (ACCEPTED_IMAGE_TYPES as readonly string[]).includes(mime);
 }
 
+/** Types acceptés à l'envoi : images + PDF. */
+export const ACCEPTED_UPLOAD_TYPES = [
+  ...ACCEPTED_IMAGE_TYPES,
+  "application/pdf",
+] as const;
+
+export function isAcceptedUploadType(mime: string): boolean {
+  return (ACCEPTED_UPLOAD_TYPES as readonly string[]).includes(mime);
+}
+
+export function isPdf(mime: string | null | undefined): boolean {
+  return mime === "application/pdf";
+}
+
 export const FUEL_VALUES = [
   "GASOLINE",
   "DIESEL",

@@ -39,7 +39,7 @@ export default async function EditVehiclePage({
     getEffectiveVehiclePerms(user.id, vehicle.id),
     prisma.vehicleRegistration.findUnique({
       where: { vehicleId: vehicle.id },
-      select: { updatedAt: true, extracted: true },
+      select: { updatedAt: true, extracted: true, mimeType: true },
     }),
   ]);
 
@@ -86,6 +86,7 @@ export default async function EditVehiclePage({
           <CarteGrise
             vehicleId={vehicle.id}
             imageVersion={registration ? registration.updatedAt.getTime() : null}
+            mimeType={registration?.mimeType ?? null}
             aiEnabled={CARTE_GRISE_AI_ENABLED}
             canManage={perms.registrationManage}
             previewFields={previewFields}
