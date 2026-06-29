@@ -18,13 +18,22 @@ datasource db {
 
 model User {
   id           String       @id @default(cuid())
-  email        String       @unique
+  // E-mail facultatif : un compte peut être créé par l'admin sans e-mail ;
+  // l'utilisateur le renseigne en activant son accès via une invitation.
+  email        String?      @unique
   passwordHash String
   name         String
+  firstName    String? // prénom (champ profil facultatif)
+  lastName     String? // nom (champ profil facultatif)
+  phone        String? // téléphone (champ profil facultatif)
   isAdmin      Boolean      @default(false) // peut créer/gérer les comptes
+  // Compte actif : un compte créé par l'admin sans accès est `false` et passe
+  // à `true` lorsque la personne accepte son invitation (choisit un mot de passe).
+  activated    Boolean      @default(true)
   createdAt    DateTime     @default(now())
   memberships  Membership[]
   invitesSent  Invite[]     @relation("InviteCreatedBy")
+  invitesFor   Invite[]     @relation("InviteTarget")
 }
 
 // Un garage regroupe les personnes qui suivent un ou plusieurs véhicules :
@@ -32,6 +41,8 @@ model User {
 model Garage {
   id          String           @id @default(cuid())
   name        String
+  address     String? // coordonnées facultatives
+  phone       String?
   createdAt   DateTime         @default(now())
   memberships Membership[]
   vehicles    Vehicle[]
@@ -41,9 +52,9 @@ model Garage {
 }
 
 enum Role {
-  OWNER  // accès complet, gestion des membres
-  DRIVER // conducteur / famille : lecture + saisie
-  VIEWER // lecture seule
+  OWNER  // accès complet, gestion des membres (≈ "OWNER")
+  DRIVER // conducteur / famille : vision d'ensemble + saisie, hors finances (≈ "EMPLOYEE")
+  VIEWER // lecture seule minimale, ne voit que l'essentiel (≈ "MEMBER")
 }
 
 model Membership {
@@ -60,19 +71,33 @@ model Membership {
 
 // Invitation créée par un administrateur : l'utilisateur choisit lui-même son
 // mot de passe via le lien (aucun mot de passe n'est défini par l'admin).
+// Si `userId` est défini, l'invitation ACTIVE ce compte existant au lieu d'en
+// créer un nouveau.
 model Invite {
   id          String    @id @default(cuid())
   token       String    @unique
-  email       String
+  email       String?
   name        String
   garage      Garage    @relation(fields: [garageId], references: [id], onDelete: Cascade)
   garageId    String
   role        Role      @default(DRIVER)
   createdBy   User?     @relation("InviteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   createdById String?
+  // Compte existant à activer (créé par l'admin sans accès).
+  user        User?     @relation("InviteTarget", fields: [userId], references: [id], onDelete: Cascade)
+  userId      String?
   createdAt   DateTime  @default(now())
   expiresAt   DateTime
   acceptedAt  DateTime?
+}
+
+// Surcharge en base des droits par défaut d'un rôle. `perms` = JSON (liste des
+// clés de droits accordées, voir src/lib/perms.ts). Si une ligne existe pour un
+// rôle, elle remplace les droits par défaut ; sinon ROLE_DEFAULTS s'applique.
+model RolePerms {
+  role      String   @id // "OWNER" | "DRIVER" | "VIEWER"
+  perms     String   @default("[]")
+  updatedAt DateTime @updatedAt
 }
 
 // --- Véhicule ---
@@ -120,6 +145,29 @@ model Vehicle {
   tankCapacity  Float? // capacité du réservoir (L), pour info
   initialMileage Int? // compteur (km ou h) à l'achat / création du profil
   notes         String?
+
+  // --- Données issues de la carte grise (certificat d'immatriculation) ---
+  // Repères normalisés entre parenthèses. Tous facultatifs ; alimentés depuis
+  // la photo de carte grise (analyse IA, après validation champ par champ).
+  vehicleType         String? // D.2 — type, variante, version
+  firstRegistrationDate DateTime? // B — date de 1re mise en circulation
+  registrationDate    DateTime? // I — date du certificat
+  displacementCc      Int? // P.1 — cylindrée (cm³)
+  powerKw             Int? // P.2 — puissance nette maximale (kW)
+  fiscalPower         Int? // P.6 — puissance administrative (CV fiscaux)
+  seats               Int? // S.1 — nombre de places assises
+  co2                 Int? // V.7 — émissions de CO2 (g/km)
+  emissionClass       String? // V.9 — classe environnementale (norme Euro)
+  massInService       Int? // G — masse en service / poids à vide (kg)
+  maxLadenMass        Int? // F.2 — masse en charge max admissible en service (kg)
+  categoryEu          String? // J — catégorie du véhicule (CE)
+  nationalType        String? // J.1 — genre national (VP, CTTE…)
+  bodyworkCe          String? // J.2 — carrosserie (CE)
+  bodyworkNational    String? // J.3 — carrosserie (désignation nationale)
+  typeApprovalNumber  String? // K — numéro de réception par type
+  holderName          String? // C.1 — nom du titulaire
+  holderAddress       String? // C.3 — adresse du titulaire
+
   createdAt     DateTime        @default(now())
 
   maintenances  Maintenance[]
@@ -129,6 +177,25 @@ model Vehicle {
   documents     Document[]
   reminders     Reminder[]
   shares        VehicleShare[]
+  registration  VehicleRegistration?
+}
+
+// Photo de la carte grise, réservée au propriétaire du véhicule (droit
+// `registrationView`). Stockée en base (Bytes) — pas de volume disque à gérer.
+// Une seule par véhicule (remplacée à chaque nouvel envoi).
+model VehicleRegistration {
+  id        String   @id @default(cuid())
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId String   @unique
+  data      Bytes // contenu de l'image
+  mimeType  String // ex. image/jpeg
+  fileName  String?
+  // Dernier résultat d'analyse IA (JSON des champs détectés) + horodatage,
+  // conservé pour proposer un aperçu/validation et garder une trace brute.
+  extracted   String?
+  extractedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // Partage d'un véhicule avec un garage supplémentaire (en plus du propriétaire).

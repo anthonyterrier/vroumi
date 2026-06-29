@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireVehicle } from "@/lib/vehicles";
+import { getEffectiveVehiclePerms } from "@/lib/perms";
 import { VehicleTabs } from "@/components/VehicleTabs";
 
 export default async function VehicleLayout({
@@ -10,7 +11,8 @@ export default async function VehicleLayout({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { vehicle } = await requireVehicle(id);
+  const { user, vehicle } = await requireVehicle(id);
+  const perms = await getEffectiveVehiclePerms(user.id, vehicle.id);
 
   return (
     <div>
@@ -21,7 +23,11 @@ export default async function VehicleLayout({
         <span>/</span>
         <span className="font-medium text-gray-700">{vehicle.name}</span>
       </div>
-      <VehicleTabs vehicleId={vehicle.id} />
+      <VehicleTabs
+        vehicleId={vehicle.id}
+        canViewCosts={perms.costsView}
+        canEdit={perms.vehiclesEdit}
+      />
       {children}
     </div>
   );

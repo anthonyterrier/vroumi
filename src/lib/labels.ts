@@ -89,6 +89,49 @@ export const ROLE_LABELS: Record<string, string> = {
   VIEWER: "Lecture seule",
 };
 
+/** Courte description du rôle (affichée dans l'éditeur de droits). */
+export const ROLE_DESCRIPTIONS: Record<string, string> = {
+  OWNER: "Accès complet et gestion des membres.",
+  DRIVER: "Vision d'ensemble et saisie, hors finances et gestion des membres.",
+  VIEWER: "Lecture seule de l'essentiel.",
+};
+
+/** Libellés des fonctionnalités CRUD pour l'éditeur de droits. */
+export const PERM_FEATURE_LABELS: Record<string, string> = {
+  vehicles: "Véhicules",
+  maintenance: "Entretiens",
+  repairs: "Réparations",
+  fuel: "Carburant",
+  mileage: "Kilométrage",
+  documents: "Documents",
+  reminders: "Rappels",
+};
+
+/** Libellés des actions CRUD. */
+export const PERM_ACTION_LABELS: Record<string, string> = {
+  View: "Voir",
+  Add: "Ajouter",
+  Edit: "Modifier",
+  Delete: "Supprimer",
+};
+
+/** Libellés des droits « module » (action unique). */
+export const PERM_MODULE_LABELS: Record<string, string> = {
+  costsView: "Voir la synthèse des coûts (finances)",
+  membersManage: "Gérer les membres du garage",
+  catalogManage: "Gérer le catalogue des prestataires",
+  registrationView: "Voir la carte grise (propriétaire)",
+  registrationManage: "Gérer la carte grise (photo + analyse IA)",
+};
+
+/** Suffixe d'action d'une clé CRUD : "maintenanceEdit" → "Edit". */
+export function permActionLabel(key: string): string {
+  const action = ["View", "Add", "Edit", "Delete"].find((a) =>
+    key.endsWith(a)
+  );
+  return action ? PERM_ACTION_LABELS[action] : key;
+}
+
 /** Pictogramme associé à un type d'entretien (affichage compact). */
 export const MAINTENANCE_TYPE_ICON: Record<string, string> = {
   VIDANGE: "🛢️",

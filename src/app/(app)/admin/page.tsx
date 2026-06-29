@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { headers } from "next/headers";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -5,16 +6,52 @@ import { Modal } from "@/components/Modal";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DeleteButton } from "@/components/DeleteButton";
 import { CopyButton } from "@/components/CopyButton";
+import { RoleSelect } from "@/components/RoleSelect";
 import {
-  createInvite,
+  createAccount,
+  inviteUser,
   deleteInvite,
   toggleAdmin,
-  createGarage,
-  removeMember,
   deleteUser,
+  createGarage,
+  updateGarage,
+  deleteGarage,
+  addMember,
+  removeMember,
+  updateMemberRole,
+  startImpersonation,
+  startPreview,
 } from "@/app/(app)/admin/actions";
 import { ROLE_LABELS } from "@/lib/labels";
 import { formatDate } from "@/lib/format";
+
+function GarageOptions({
+  garages,
+}: {
+  garages: { id: string; name: string }[];
+}) {
+  return (
+    <>
+      {garages.map((g) => (
+        <option key={g.id} value={g.id}>
+          {g.name}
+        </option>
+      ))}
+    </>
+  );
+}
+
+function RoleOptions() {
+  return (
+    <>
+      {Object.entries(ROLE_LABELS).map(([k, v]) => (
+        <option key={k} value={k}>
+          {v}
+        </option>
+      ))}
+    </>
+  );
+}
 
 export default async function AdminPage() {
   const admin = await requireAdmin();
@@ -24,7 +61,12 @@ export default async function AdminPage() {
       orderBy: { createdAt: "asc" },
       include: { memberships: { include: { garage: true } } },
     }),
-    prisma.garage.findMany({ orderBy: { createdAt: "asc" } }),
+    prisma.garage.findMany({
+      orderBy: { createdAt: "asc" },
+      include: {
+        memberships: { include: { user: true }, orderBy: { createdAt: "asc" } },
+      },
+    }),
     prisma.invite.findMany({
       where: { acceptedAt: null },
       orderBy: { createdAt: "desc" },
@@ -39,41 +81,64 @@ export default async function AdminPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Administration</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Administration</h1>
+        <Link
+          href="/admin/roles"
+          className="text-sm font-medium text-brand-600 hover:underline"
+        >
+          Droits par rôle →
+        </Link>
+      </div>
+
+      {/* Aperçu de rôle */}
+      <section className="card space-y-2">
+        <h2 className="text-sm font-semibold text-gray-700">
+          Prévisualiser un rôle
+        </h2>
+        <p className="text-xs text-gray-400">
+          Affiche l&apos;application en lecture seule comme la verrait le rôle
+          choisi. Un bandeau permet de revenir au mode administrateur.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {(["OWNER", "DRIVER", "VIEWER"] as const).map((r) => (
+            <form key={r} action={startPreview.bind(null, r)}>
+              <SubmitButton className="btn-secondary text-xs" pendingLabel="…">
+                Voir comme {ROLE_LABELS[r]}
+              </SubmitButton>
+            </form>
+          ))}
+        </div>
+      </section>
 
       {/* Invitations */}
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Invitations en attente</h2>
           <Modal trigger="+ Inviter" title="Inviter une personne">
-            <form action={createInvite} className="space-y-3">
+            <form action={inviteUser} className="space-y-3">
               <div>
                 <label className="label">Nom</label>
                 <input name="name" className="input" required />
               </div>
               <div>
-                <label className="label">E-mail</label>
-                <input name="email" type="email" className="input" required />
+                <label className="label">
+                  E-mail{" "}
+                  <span className="font-normal text-gray-400">(optionnel)</span>
+                </label>
+                <input name="email" type="email" className="input" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label">Garage</label>
                   <select name="garageId" className="input" required>
-                    {garages.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
-                      </option>
-                    ))}
+                    <GarageOptions garages={garages} />
                   </select>
                 </div>
                 <div>
                   <label className="label">Rôle</label>
                   <select name="role" className="input" defaultValue="DRIVER">
-                    {Object.entries(ROLE_LABELS).map(([k, v]) => (
-                      <option key={k} value={k}>
-                        {v}
-                      </option>
-                    ))}
+                    <RoleOptions />
                   </select>
                 </div>
               </div>
@@ -99,11 +164,12 @@ export default async function AdminPage() {
                     <p className="font-medium">
                       {inv.name}{" "}
                       <span className="text-sm font-normal text-gray-400">
-                        {inv.email}
+                        {inv.email ?? "sans e-mail"}
                       </span>
                     </p>
                     <p className="text-xs text-gray-400">
-                      {inv.garage.name} · {ROLE_LABELS[inv.role]} · expire le{" "}
+                      {inv.garage.name} · {ROLE_LABELS[inv.role]}
+                      {inv.userId ? " · activation de compte" : ""} · expire le{" "}
                       {formatDate(inv.expiresAt)}
                     </p>
                   </div>
@@ -131,25 +197,216 @@ export default async function AdminPage() {
                 <label className="label">Nom du garage</label>
                 <input name="name" className="input" required autoFocus />
               </div>
+              <div>
+                <label className="label">
+                  Adresse{" "}
+                  <span className="font-normal text-gray-400">(optionnel)</span>
+                </label>
+                <input name="address" className="input" />
+              </div>
+              <div>
+                <label className="label">
+                  Téléphone{" "}
+                  <span className="font-normal text-gray-400">(optionnel)</span>
+                </label>
+                <input name="phone" className="input" />
+              </div>
               <SubmitButton className="btn-primary w-full">Créer</SubmitButton>
             </form>
           </Modal>
         </div>
-        <div className="space-y-2">
-          {garages.map((g) => (
-            <div key={g.id} className="card flex items-center justify-between py-3">
-              <span className="font-medium">{g.name}</span>
-              <span className="text-xs text-gray-400">
-                créé le {formatDate(g.createdAt)}
-              </span>
-            </div>
-          ))}
+
+        <div className="space-y-3">
+          {garages.map((g) => {
+            const memberIds = new Set(g.memberships.map((m) => m.userId));
+            const nonMembers = users.filter((u) => !memberIds.has(u.id));
+            return (
+              <div key={g.id} className="card space-y-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-medium">{g.name}</p>
+                    <p className="text-xs text-gray-400">
+                      {g.address ?? ""}
+                      {g.address && g.phone ? " · " : ""}
+                      {g.phone ?? ""}
+                      {!g.address && !g.phone
+                        ? `créé le ${formatDate(g.createdAt)}`
+                        : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Modal
+                      trigger="Modifier"
+                      title="Modifier le garage"
+                      triggerClassName="text-xs text-brand-600 hover:underline"
+                    >
+                      <form
+                        action={updateGarage.bind(null, g.id)}
+                        className="space-y-3"
+                      >
+                        <div>
+                          <label className="label">Nom</label>
+                          <input
+                            name="name"
+                            className="input"
+                            defaultValue={g.name}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="label">Adresse</label>
+                          <input
+                            name="address"
+                            className="input"
+                            defaultValue={g.address ?? ""}
+                          />
+                        </div>
+                        <div>
+                          <label className="label">Téléphone</label>
+                          <input
+                            name="phone"
+                            className="input"
+                            defaultValue={g.phone ?? ""}
+                          />
+                        </div>
+                        <SubmitButton className="btn-primary w-full">
+                          Enregistrer
+                        </SubmitButton>
+                      </form>
+                    </Modal>
+                    <form action={deleteGarage.bind(null, g.id)}>
+                      <DeleteButton
+                        confirmMessage={`Supprimer le garage ${g.name} ? Ses véhicules et données seront supprimés.`}
+                      />
+                    </form>
+                  </div>
+                </div>
+
+                {/* Membres */}
+                <div className="space-y-1.5">
+                  {g.memberships.map((m) => (
+                    <div
+                      key={m.id}
+                      className="flex items-center justify-between gap-2 rounded-lg bg-gray-50 px-2.5 py-1.5"
+                    >
+                      <span className="truncate text-sm">
+                        {m.user.name}
+                        <span className="ml-1 text-xs text-gray-400">
+                          {m.user.email ?? ""}
+                        </span>
+                      </span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <RoleSelect
+                          action={updateMemberRole.bind(null, m.id)}
+                          defaultValue={m.role}
+                        />
+                        <form action={removeMember.bind(null, m.id)}>
+                          <DeleteButton
+                            label="✕"
+                            confirmMessage={`Retirer ${m.user.name} du garage ${g.name} ?`}
+                            className="text-gray-400 hover:text-red-600"
+                          />
+                        </form>
+                      </div>
+                    </div>
+                  ))}
+                  {g.memberships.length === 0 && (
+                    <p className="text-xs text-gray-400">Aucun membre.</p>
+                  )}
+                </div>
+
+                {/* Ajouter un membre */}
+                {nonMembers.length > 0 && (
+                  <form
+                    action={addMember}
+                    className="flex flex-wrap items-end gap-2"
+                  >
+                    <input type="hidden" name="garageId" value={g.id} />
+                    <div className="grow">
+                      <label className="label">Ajouter un membre</label>
+                      <select name="userId" className="input" required>
+                        {nonMembers.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name}
+                            {u.email ? ` (${u.email})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <select name="role" className="input w-auto" defaultValue="DRIVER">
+                      <RoleOptions />
+                    </select>
+                    <SubmitButton className="btn-secondary" pendingLabel="…">
+                      Ajouter
+                    </SubmitButton>
+                  </form>
+                )}
+              </div>
+            );
+          })}
         </div>
       </section>
 
       {/* Comptes */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Comptes</h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Comptes</h2>
+          <Modal trigger="+ Compte" title="Créer un compte">
+            <form action={createAccount} className="space-y-3">
+              <div>
+                <label className="label">Nom complet / surnom</label>
+                <input name="name" className="input" required />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Prénom</label>
+                  <input name="firstName" className="input" />
+                </div>
+                <div>
+                  <label className="label">Nom</label>
+                  <input name="lastName" className="input" />
+                </div>
+              </div>
+              <div>
+                <label className="label">
+                  E-mail{" "}
+                  <span className="font-normal text-gray-400">(optionnel)</span>
+                </label>
+                <input name="email" type="email" className="input" />
+              </div>
+              <div>
+                <label className="label">
+                  Téléphone{" "}
+                  <span className="font-normal text-gray-400">(optionnel)</span>
+                </label>
+                <input name="phone" className="input" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Garage</label>
+                  <select name="garageId" className="input" defaultValue="">
+                    <option value="">— Aucun —</option>
+                    <GarageOptions garages={garages} />
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Rôle</label>
+                  <select name="role" className="input" defaultValue="DRIVER">
+                    <RoleOptions />
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs text-gray-400">
+                Le compte est créé sans accès. Créez ensuite un lien
+                d&apos;activation pour qu&apos;il choisisse son mot de passe.
+              </p>
+              <SubmitButton className="btn-primary w-full">
+                Créer le compte
+              </SubmitButton>
+            </form>
+          </Modal>
+        </div>
+
         <div className="space-y-2">
           {users.map((u) => (
             <div key={u.id} className="card space-y-2">
@@ -162,10 +419,27 @@ export default async function AdminPage() {
                         Admin
                       </span>
                     )}
+                    {!u.activated && (
+                      <span className="badge border-amber-200 bg-amber-100 text-amber-800">
+                        Sans accès
+                      </span>
+                    )}
                   </p>
-                  <p className="text-xs text-gray-400">{u.email}</p>
+                  <p className="text-xs text-gray-400">
+                    {u.email ?? "sans e-mail"}
+                  </p>
                 </div>
                 <div className="flex items-center gap-3">
+                  {admin.id !== u.id && (
+                    <form action={startImpersonation.bind(null, u.id)}>
+                      <SubmitButton
+                        className="text-xs text-brand-600 hover:underline"
+                        pendingLabel="…"
+                      >
+                        Voir en tant que
+                      </SubmitButton>
+                    </form>
+                  )}
                   {admin.id !== u.id && (
                     <form action={toggleAdmin.bind(null, u.id, !u.isAdmin)}>
                       <SubmitButton
@@ -180,7 +454,7 @@ export default async function AdminPage() {
                     <form action={deleteUser.bind(null, u.id)}>
                       <DeleteButton
                         label="Supprimer"
-                        confirmMessage={`Supprimer définitivement le compte de ${u.name} (${u.email}) ? Cette action est irréversible.`}
+                        confirmMessage={`Supprimer définitivement le compte de ${u.name} ? Cette action est irréversible.`}
                       />
                     </form>
                   )}
@@ -189,28 +463,58 @@ export default async function AdminPage() {
                   )}
                 </div>
               </div>
-              {u.memberships.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {u.memberships.map((m) => (
-                    <span
-                      key={m.id}
-                      className="badge border-gray-200 bg-gray-100 text-gray-600"
-                    >
-                      {m.garage.name} · {ROLE_LABELS[m.role]}
-                      <form
-                        action={removeMember.bind(null, m.id)}
-                        className="ml-1 inline"
-                      >
-                        <DeleteButton
-                          label="✕"
-                          confirmMessage={`Retirer ${u.name} du garage ${m.garage.name} ?`}
-                          className="text-gray-400 hover:text-red-600"
-                        />
-                      </form>
-                    </span>
-                  ))}
-                </div>
-              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                {u.memberships.map((m) => (
+                  <span
+                    key={m.id}
+                    className="badge border-gray-200 bg-gray-100 text-gray-600"
+                  >
+                    {m.garage.name} · {ROLE_LABELS[m.role]}
+                  </span>
+                ))}
+
+                {/* Lien d'activation pour un compte sans accès */}
+                {!u.activated && garages.length > 0 && (
+                  <Modal
+                    trigger="Créer un lien d'accès"
+                    title={`Activer le compte de ${u.name}`}
+                    triggerClassName="text-xs text-brand-600 hover:underline"
+                  >
+                    <form action={inviteUser} className="space-y-3">
+                      <input type="hidden" name="userId" value={u.id} />
+                      <input type="hidden" name="name" value={u.name} />
+                      {u.email && (
+                        <input type="hidden" name="email" value={u.email} />
+                      )}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="label">Garage</label>
+                          <select name="garageId" className="input" required>
+                            <GarageOptions garages={garages} />
+                          </select>
+                        </div>
+                        <div>
+                          <label className="label">Rôle</label>
+                          <select
+                            name="role"
+                            className="input"
+                            defaultValue={u.memberships[0]?.role ?? "DRIVER"}
+                          >
+                            <RoleOptions />
+                          </select>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-400">
+                        Le lien généré apparaîtra dans « Invitations en attente ».
+                      </p>
+                      <SubmitButton className="btn-primary w-full">
+                        Générer le lien
+                      </SubmitButton>
+                    </form>
+                  </Modal>
+                )}
+              </div>
             </div>
           ))}
         </div>

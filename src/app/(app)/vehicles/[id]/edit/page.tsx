@@ -1,9 +1,17 @@
 import { requireVehicle, getUserGarageIds } from "@/lib/vehicles";
+import { getEffectiveVehiclePerms } from "@/lib/perms";
+import { CARTE_GRISE_AI_ENABLED } from "@/lib/carte-grise";
+import {
+  parseStoredExtraction,
+  CARTE_GRISE_FIELDS,
+  formatFieldValue,
+} from "@/lib/carte-grise-fields";
 import { prisma } from "@/lib/prisma";
 import { Modal } from "@/components/Modal";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DeleteButton } from "@/components/DeleteButton";
 import { VehicleForm } from "@/components/VehicleForm";
+import { CarteGrise } from "@/components/CarteGrise";
 import { updateVehicle, deleteVehicle } from "@/app/(app)/vehicles/actions";
 import {
   addServiceContact,
@@ -21,14 +29,33 @@ export default async function EditVehiclePage({
   const { id } = await params;
   const { user, vehicle } = await requireVehicle(id);
 
-  const [services, shares, garageIds] = await Promise.all([
+  const [services, shares, garageIds, perms, registration] = await Promise.all([
     prisma.serviceContact.findMany({
       where: { garageId: vehicle.garageId },
       orderBy: { name: "asc" },
     }),
     prisma.vehicleShare.findMany({ where: { vehicleId: vehicle.id } }),
     getUserGarageIds(user.id),
+    getEffectiveVehiclePerms(user.id, vehicle.id),
+    prisma.vehicleRegistration.findUnique({
+      where: { vehicleId: vehicle.id },
+      select: { updatedAt: true, extracted: true },
+    }),
   ]);
+
+  // Aperçu (dernière analyse) + données carte grise déjà enregistrées (hors
+  // champs de base déjà présents dans le formulaire ci-dessus).
+  const previewFields = parseStoredExtraction(registration?.extracted);
+  const CORE_KEYS = new Set(["make", "model", "plate", "vin", "year", "fuelType"]);
+  const vehicleRecord = vehicle as unknown as Record<string, unknown>;
+  const storedInfo = CARTE_GRISE_FIELDS.filter(
+    (f) => !CORE_KEYS.has(f.key)
+  )
+    .map((f) => ({
+      label: f.label,
+      value: formatFieldValue(f.key, vehicleRecord[f.key]),
+    }))
+    .filter((i) => i.value !== "—");
 
   // Garages de l'utilisateur (hors propriétaire) proposables au partage.
   const myGarages = await prisma.garage.findMany({
@@ -52,6 +79,20 @@ export default async function EditVehiclePage({
           <VehicleForm action={updateAction} vehicle={vehicle} submitLabel="Enregistrer" />
         </div>
       </section>
+
+      {perms.registrationView && (
+        <section>
+          <h2 className="mb-3 text-xl font-bold">Carte grise</h2>
+          <CarteGrise
+            vehicleId={vehicle.id}
+            imageVersion={registration ? registration.updatedAt.getTime() : null}
+            aiEnabled={CARTE_GRISE_AI_ENABLED}
+            canManage={perms.registrationManage}
+            previewFields={previewFields}
+            storedInfo={storedInfo}
+          />
+        </section>
+      )}
 
       <section>
         <h2 className="mb-1 text-xl font-bold">Partage entre garages</h2>

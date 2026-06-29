@@ -41,7 +41,8 @@ export default async function InvitePage({
         Vous êtes invité·e à rejoindre le garage{" "}
         <strong>{invite.garage.name}</strong> en tant que{" "}
         <strong>{ROLE_LABELS[invite.role]}</strong>. Choisissez un mot de passe
-        pour activer votre compte ({invite.email}).
+        pour activer votre compte
+        {invite.email ? ` (${invite.email})` : ""}.
       </p>
       <InviteForm token={token} />
     </>
