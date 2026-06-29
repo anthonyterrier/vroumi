@@ -4,13 +4,16 @@
 
 export type Interval = { km?: number; months?: number };
 
+// Valeurs de base (véhicule essence). Adaptées ensuite selon le carburant via
+// intervalsForVehicle().
 export const MAINTENANCE_INTERVALS: Record<string, Interval> = {
   VIDANGE: { km: 15000, months: 12 },
   FILTRE_HUILE: { km: 15000, months: 12 },
   FILTRE_AIR: { km: 30000, months: 24 },
   FILTRE_HABITACLE: { km: 15000, months: 12 },
   FILTRE_CARBURANT: { km: 40000 },
-  FREINS: { km: 40000 },
+  FREINS: { km: 40000 }, // plaquettes ~30 000 / disques ~60 000 — valeur moyenne
+  LIQUIDE_DE_FREIN: { months: 24 }, // purge ~tous les 2 ans
   PNEUS: { km: 40000 },
   COURROIE_DISTRIBUTION: { km: 120000, months: 120 },
   COURROIE_ACCESSOIRE: { km: 90000 },
@@ -26,13 +29,76 @@ export const MAINTENANCE_INTERVALS: Record<string, Interval> = {
 export const MAINTENANCE_DISCLAIMER =
   "Valeurs indicatives — référez-vous toujours au carnet d'entretien du constructeur.";
 
-/** Calcule une échéance suggérée (date + km) à partir d'un type et d'un point de départ. */
+/**
+ * Intervalles adaptés au carburant du véhicule. Faute de base de données par
+ * marque/modèle (les schémas constructeurs ne sont pas librement accessibles —
+ * voir les API commerciales type Vehicle Databases / Edmunds / CarMD), on ajuste
+ * de façon déterministe selon l'énergie, ce qui couvre l'essentiel des écarts.
+ */
+export function intervalsForVehicle(
+  fuelType?: string | null
+): Record<string, Interval> {
+  const base = { ...MAINTENANCE_INTERVALS };
+
+  switch (fuelType) {
+    case "ELECTRIC": {
+      // Pas de moteur thermique : on retire les entretiens associés.
+      for (const k of [
+        "VIDANGE",
+        "FILTRE_HUILE",
+        "FILTRE_AIR",
+        "FILTRE_CARBURANT",
+        "BOUGIES",
+        "COURROIE_DISTRIBUTION",
+        "COURROIE_ACCESSOIRE",
+        "LIQUIDE_REFROIDISSEMENT",
+      ]) {
+        delete base[k];
+      }
+      base.FREINS = { km: 80000 }; // freinage régénératif → usure plus lente
+      base.REVISION = { km: 30000, months: 24 };
+      return base;
+    }
+    case "HYBRID": {
+      base.FREINS = { km: 70000 }; // récupération d'énergie → freins moins sollicités
+      return base;
+    }
+    case "DIESEL": {
+      base.VIDANGE = { km: 20000, months: 12 };
+      base.FILTRE_HUILE = { km: 20000, months: 12 };
+      return base;
+    }
+    default:
+      return base; // essence / GPL / autre
+  }
+}
+
+/** Libellé lisible d'un intervalle : "tous les 15 000 km ou 12 mois". */
+export function formatInterval(i: Interval, unit?: string | null): string {
+  const u = unit === "HOURS" ? "h" : "km";
+  const parts: string[] = [];
+  if (i.km) parts.push(`${i.km.toLocaleString("fr-FR")} ${u}`);
+  if (i.months) {
+    parts.push(
+      i.months % 12 === 0
+        ? `${i.months / 12} an${i.months / 12 > 1 ? "s" : ""}`
+        : `${i.months} mois`
+    );
+  }
+  return parts.length ? `tous les ${parts.join(" ou ")}` : "selon l'usage";
+}
+
+/**
+ * Calcule une échéance suggérée (date + km) à partir d'un type, d'un point de
+ * départ et du carburant du véhicule (intervalles adaptés).
+ */
 export function suggestNextDue(
   type: string,
   fromDate: Date,
-  fromMileage: number | null | undefined
+  fromMileage: number | null | undefined,
+  fuelType?: string | null
 ): { nextDueDate: Date | null; nextDueMileage: number | null } {
-  const interval = MAINTENANCE_INTERVALS[type];
+  const interval = intervalsForVehicle(fuelType)[type];
   if (!interval) return { nextDueDate: null, nextDueMileage: null };
 
   let nextDueDate: Date | null = null;
