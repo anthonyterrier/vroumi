@@ -23,6 +23,14 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: appVersion(),
   },
+  experimental: {
+    // Les Server Actions sont limitées à 1 Mo par défaut : on relève la limite
+    // pour permettre l'envoi d'une photo / PDF de carte grise (plafonné à 8 Mo
+    // côté code, voir registration-actions.ts).
+    serverActions: {
+      bodySizeLimit: "10mb",
+    },
+  },
 };
 
 export default nextConfig;
