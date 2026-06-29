@@ -19,19 +19,24 @@ type ImageMediaType = "image/jpeg" | "image/png" | "image/webp";
 // n'est pas compatible avec le helper zodOutputFormat du SDK : on décrit le
 // schéma à la main et on valide la réponse avec zod.
 const JSON_SCHEMA: { [key: string]: unknown } = (() => {
+  // Champ nullable exprimé en `anyOf` (forme supportée par les structured
+  // outputs), plutôt qu'un `type: [..., "null"]` qui peut être refusé.
+  const nullable = (base: Record<string, unknown>) => ({
+    anyOf: [base, { type: "null" }],
+  });
   const properties: Record<string, unknown> = {};
   for (const f of CARTE_GRISE_FIELDS) {
     if (f.key === "fuelType") {
-      properties[f.key] = { type: ["string", "null"], enum: [...FUEL_VALUES, null] };
+      properties[f.key] = nullable({ type: "string", enum: [...FUEL_VALUES] });
     } else if (f.type === "int") {
-      properties[f.key] = { type: ["integer", "null"] };
+      properties[f.key] = nullable({ type: "integer" });
     } else if (f.type === "date") {
-      properties[f.key] = {
-        type: ["string", "null"],
+      properties[f.key] = nullable({
+        type: "string",
         description: "Format AAAA-MM-JJ",
-      };
+      });
     } else {
-      properties[f.key] = { type: ["string", "null"] };
+      properties[f.key] = nullable({ type: "string" });
     }
   }
   return {

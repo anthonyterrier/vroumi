@@ -106,8 +106,10 @@ export async function analyzeRegistration(
   let fields: CarteGriseFields;
   try {
     fields = await extractCarteGrise(Buffer.from(reg.data), reg.mimeType);
-  } catch {
-    return { error: "L'analyse a échoué. Réessayez avec une photo plus nette." };
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    console.error("Analyse carte grise échouée:", detail);
+    return { error: `L'analyse a échoué : ${detail.slice(0, 300)}` };
   }
 
   await prisma.vehicleRegistration.update({
