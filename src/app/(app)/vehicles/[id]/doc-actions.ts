@@ -42,7 +42,11 @@ function refresh(vehicleId: string) {
 
 // --- Plan d'entretien (carnet constructeur) ------------------------------
 
-export async function uploadServicePlan(vehicleId: string, formData: FormData) {
+/** Ajoute une page/photo au plan d'entretien (cumulatif). */
+export async function uploadServicePlanDoc(
+  vehicleId: string,
+  formData: FormData
+) {
   await guard(vehicleId);
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return;
@@ -50,31 +54,27 @@ export async function uploadServicePlan(vehicleId: string, formData: FormData) {
   if (!isAcceptedUploadType(file.type)) return;
 
   const bytes = Buffer.from(await file.arrayBuffer());
-  await prisma.vehicleServicePlan.upsert({
-    where: { vehicleId },
-    create: {
+  await prisma.vehicleServicePlanDoc.create({
+    data: {
       vehicleId,
       data: bytes,
       mimeType: file.type,
       fileName: file.name || null,
     },
-    // Nouveau document → l'ancienne extraction n'est plus pertinente.
-    update: {
-      data: bytes,
-      mimeType: file.type,
-      fileName: file.name || null,
-      intervals: "[]",
-    },
   });
   refresh(vehicleId);
 }
 
-export async function deleteServicePlan(vehicleId: string) {
+/** Supprime une page du plan d'entretien. */
+export async function deleteServicePlanDoc(vehicleId: string, docId: string) {
   await guard(vehicleId);
-  await prisma.vehicleServicePlan.deleteMany({ where: { vehicleId } });
+  await prisma.vehicleServicePlanDoc.deleteMany({
+    where: { id: docId, vehicleId },
+  });
   refresh(vehicleId);
 }
 
+/** Analyse TOUTES les pages ensemble et stocke les intervalles agrégés. */
 export async function analyzeServicePlan(
   vehicleId: string,
   _prev: ServicePlanState,
@@ -85,32 +85,38 @@ export async function analyzeServicePlan(
   }
   await guard(vehicleId);
 
-  const plan = await prisma.vehicleServicePlan.findUnique({
+  const docs = await prisma.vehicleServicePlanDoc.findMany({
     where: { vehicleId },
+    orderBy: { createdAt: "asc" },
   });
-  if (!plan?.data) {
-    return { error: "Aucun document de plan d'entretien à analyser." };
+  if (docs.length === 0) {
+    return { error: "Aucune page de plan d'entretien à analyser." };
   }
 
   let items: ServicePlanItem[];
   try {
-    items = await extractServicePlan(Buffer.from(plan.data), plan.mimeType ?? "");
+    items = await extractServicePlan(
+      docs.map((d) => ({ data: Buffer.from(d.data), mimeType: d.mimeType }))
+    );
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
     console.error("Analyse plan d'entretien échouée:", detail);
     return { error: `L'analyse a échoué : ${detail.slice(0, 300)}` };
   }
 
-  await prisma.vehicleServicePlan.update({
-    where: { vehicleId },
-    data: { intervals: JSON.stringify(items) },
+  await prisma.vehicle.update({
+    where: { id: vehicleId },
+    data: { servicePlanIntervals: JSON.stringify(items) },
   });
   refresh(vehicleId);
 
   if (items.length === 0) {
-    return { error: "Aucune ligne d'entretien détectée sur le document." };
+    return { error: "Aucune ligne d'entretien détectée sur les pages." };
   }
-  return { items, message: `${items.length} ligne(s) d'entretien détectée(s).` };
+  return {
+    items,
+    message: `${items.length} ligne(s) d'entretien détectée(s) sur ${docs.length} page(s).`,
+  };
 }
 
 // --- Manuel / notice -----------------------------------------------------
