@@ -4,8 +4,8 @@ import { useActionState, useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DeleteButton } from "@/components/DeleteButton";
 import {
-  uploadServicePlan,
-  deleteServicePlan,
+  uploadServicePlanDoc,
+  deleteServicePlanDoc,
   analyzeServicePlan,
   type ServicePlanState,
 } from "@/app/(app)/vehicles/[id]/doc-actions";
@@ -15,30 +15,28 @@ import {
   type ServicePlanItem,
 } from "@/lib/service-plan-fields";
 
+type Doc = { id: string; mimeType: string; fileName: string | null };
+
 /**
- * Section « Plan d'entretien (carnet constructeur) » : envoi d'une photo/PDF de
- * la page du programme d'entretien, analyse IA → intervalles propres au
- * véhicule (qui priment alors sur les rythmes génériques).
+ * Section « Plan d'entretien (carnet constructeur) » : plusieurs pages/photos
+ * possibles ; l'IA les analyse toutes ensemble → intervalles propres au
+ * véhicule (qui priment sur les rythmes génériques).
  */
 export function ServicePlan({
   vehicleId,
-  docVersion,
-  mimeType,
+  docs,
   aiEnabled,
   canManage,
   items,
   usageUnit,
 }: {
   vehicleId: string;
-  docVersion: number | null;
-  mimeType: string | null;
+  docs: Doc[];
   aiEnabled: boolean;
   canManage: boolean;
   items: ServicePlanItem[];
   usageUnit: string | null;
 }) {
-  const hasDoc = docVersion != null;
-  const fileUrl = `/api/vehicles/${vehicleId}/service-plan?v=${docVersion}`;
   const [state, analyzeAction] = useActionState<ServicePlanState, FormData>(
     analyzeServicePlan.bind(null, vehicleId),
     undefined
@@ -50,46 +48,66 @@ export function ServicePlan({
   return (
     <div className="card space-y-4">
       <p className="text-sm text-gray-500">
-        Envoie <strong>uniquement la ou les page(s) du programme
-        d&apos;entretien</strong> du carnet (pas la notice complète) : l&apos;IA
-        en extrait les périodicités réelles de ce véhicule, qui remplacent les
-        rythmes indicatifs sur l&apos;onglet Entretiens. Taille max {MAX_MB} Mo
-        — pour la notice entière, utilise la section « Manuel ».
+        Ajoute <strong>la ou les page(s) du programme d&apos;entretien</strong>{" "}
+        du carnet (plusieurs photos possibles, pas la notice complète) : l&apos;IA
+        analyse toutes les pages ensemble et en extrait les périodicités réelles
+        de ce véhicule, qui remplacent les rythmes indicatifs sur l&apos;onglet
+        Entretiens. Max {MAX_MB} Mo par page.
       </p>
 
-      {hasDoc && (
+      {docs.length > 0 && (
         <div className="space-y-3">
-          {isPdf(mimeType) ? (
-            <a
-              href={fileUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-brand-600 hover:underline"
-            >
-              Ouvrir le document (PDF)
-            </a>
-          ) : (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={fileUrl}
-              alt="Plan d'entretien"
-              className="max-h-72 w-full rounded-lg border border-gray-200 object-contain"
-            />
-          )}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {docs.map((doc) => {
+              const url = `/api/vehicles/${vehicleId}/service-plan/${doc.id}`;
+              return (
+                <div
+                  key={doc.id}
+                  className="space-y-1 rounded-lg border border-gray-200 p-2"
+                >
+                  {isPdf(doc.mimeType) ? (
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block truncate text-sm text-brand-600 hover:underline"
+                    >
+                      📄 {doc.fileName ?? "Page PDF"}
+                    </a>
+                  ) : (
+                    <a href={url} target="_blank" rel="noopener noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={url}
+                        alt={doc.fileName ?? "Page"}
+                        className="h-28 w-full rounded object-cover"
+                      />
+                    </a>
+                  )}
+                  {canManage && (
+                    <form
+                      action={deleteServicePlanDoc.bind(null, vehicleId, doc.id)}
+                    >
+                      <DeleteButton
+                        label="Supprimer"
+                        confirmMessage="Supprimer cette page ?"
+                        className="text-xs text-red-600 hover:underline"
+                      />
+                    </form>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
           {canManage && (
-            <div className="flex flex-wrap items-center gap-3">
-              <form action={analyzeAction}>
-                <SubmitButton className="btn-primary" pendingLabel="Analyse en cours…">
-                  {aiEnabled ? "Analyser avec l'IA" : "Analyse IA indisponible"}
-                </SubmitButton>
-              </form>
-              <form action={deleteServicePlan.bind(null, vehicleId)}>
-                <DeleteButton
-                  label="Supprimer"
-                  confirmMessage="Supprimer le plan d'entretien ?"
-                />
-              </form>
-            </div>
+            <form action={analyzeAction}>
+              <SubmitButton className="btn-primary" pendingLabel="Analyse en cours…">
+                {aiEnabled
+                  ? `Analyser ${docs.length} page(s) avec l'IA`
+                  : "Analyse IA indisponible"}
+              </SubmitButton>
+            </form>
           )}
           {state?.error && (
             <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -127,7 +145,7 @@ export function ServicePlan({
 
       {canManage && (
         <form
-          action={uploadServicePlan.bind(null, vehicleId)}
+          action={uploadServicePlanDoc.bind(null, vehicleId)}
           className="space-y-2"
           onSubmit={(e) => {
             const input = e.currentTarget.elements.namedItem(
@@ -139,7 +157,7 @@ export function ServicePlan({
               setUploadError(
                 `Fichier trop volumineux (${(f.size / 1024 / 1024).toFixed(
                   0
-                )} Mo, max ${MAX_MB} Mo). Envoie seulement la page du programme d'entretien — pas la notice complète.`
+                )} Mo, max ${MAX_MB} Mo par page).`
               );
             } else {
               setUploadError(null);
@@ -147,7 +165,7 @@ export function ServicePlan({
           }}
         >
           <label className="label">
-            {hasDoc ? "Remplacer le document" : "Ajouter le plan d'entretien"}{" "}
+            Ajouter une page{" "}
             <span className="font-normal text-gray-400">
               (JPEG, PNG, WebP ou PDF, {MAX_MB} Mo max)
             </span>
@@ -165,7 +183,7 @@ export function ServicePlan({
             </p>
           )}
           <SubmitButton className="btn-secondary" pendingLabel="Envoi…">
-            Envoyer le document
+            Ajouter la page
           </SubmitButton>
         </form>
       )}

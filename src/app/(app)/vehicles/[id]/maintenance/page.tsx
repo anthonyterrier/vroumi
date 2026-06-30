@@ -143,7 +143,7 @@ export default async function MaintenancePage({
   const { id } = await params;
   const { vehicle } = await requireVehicle(id);
 
-  const [items, services, mileage, plan] = await Promise.all([
+  const [items, services, mileage] = await Promise.all([
     prisma.maintenance.findMany({
       where: { vehicleId: vehicle.id },
       orderBy: { performedAt: "desc" },
@@ -153,14 +153,12 @@ export default async function MaintenancePage({
       orderBy: { name: "asc" },
     }),
     currentMileage(vehicle.id, vehicle.initialMileage),
-    prisma.vehicleServicePlan.findUnique({
-      where: { vehicleId: vehicle.id },
-      select: { intervals: true },
-    }),
   ]);
 
   // Intervalles issus du carnet constructeur (s'ils existent, ils priment).
-  const planItems = parseServicePlan(plan?.intervals);
+  const planItems = parseServicePlan(
+    (vehicle as unknown as { servicePlanIntervals?: string }).servicePlanIntervals
+  );
 
   const addAction = addMaintenance.bind(null, vehicle.id);
   const total = items.reduce((s, m) => s + (m.cost ?? 0), 0);

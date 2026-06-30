@@ -33,32 +33,40 @@ export default async function EditVehiclePage({
   const { id } = await params;
   const { user, vehicle } = await requireVehicle(id);
 
-  const [services, shares, garageIds, perms, registration, servicePlan, manual] =
-    await Promise.all([
-      prisma.serviceContact.findMany({
-        where: { garageId: vehicle.garageId },
-        orderBy: { name: "asc" },
-      }),
-      prisma.vehicleShare.findMany({ where: { vehicleId: vehicle.id } }),
-      getUserGarageIds(user.id),
-      getEffectiveVehiclePerms(user.id, vehicle.id),
-      prisma.vehicleRegistration.findUnique({
-        where: { vehicleId: vehicle.id },
-        select: { updatedAt: true, extracted: true, mimeType: true },
-      }),
-      prisma.vehicleServicePlan.findUnique({
-        where: { vehicleId: vehicle.id },
-        select: { updatedAt: true, mimeType: true, intervals: true },
-      }),
-      prisma.vehicleManual.findUnique({
-        where: { vehicleId: vehicle.id },
-        select: { updatedAt: true, mimeType: true, url: true, title: true },
-      }),
-    ]);
+  const [
+    services,
+    shares,
+    garageIds,
+    perms,
+    registration,
+    planDocs,
+    manual,
+  ] = await Promise.all([
+    prisma.serviceContact.findMany({
+      where: { garageId: vehicle.garageId },
+      orderBy: { name: "asc" },
+    }),
+    prisma.vehicleShare.findMany({ where: { vehicleId: vehicle.id } }),
+    getUserGarageIds(user.id),
+    getEffectiveVehiclePerms(user.id, vehicle.id),
+    prisma.vehicleRegistration.findUnique({
+      where: { vehicleId: vehicle.id },
+      select: { updatedAt: true, extracted: true, mimeType: true },
+    }),
+    prisma.vehicleServicePlanDoc.findMany({
+      where: { vehicleId: vehicle.id },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, mimeType: true, fileName: true },
+    }),
+    prisma.vehicleManual.findUnique({
+      where: { vehicleId: vehicle.id },
+      select: { updatedAt: true, mimeType: true, url: true, title: true },
+    }),
+  ]);
 
-  const planItems = parseServicePlan(servicePlan?.intervals);
-  const planDocVersion =
-    servicePlan?.mimeType != null ? servicePlan.updatedAt.getTime() : null;
+  const planItems = parseServicePlan(
+    (vehicle as unknown as { servicePlanIntervals?: string }).servicePlanIntervals
+  );
   const manualFileVersion =
     manual?.mimeType != null ? manual.updatedAt.getTime() : null;
   const manualSearchQuery = `notice manuel utilisation ${[
@@ -125,8 +133,7 @@ export default async function EditVehiclePage({
         <h2 className="mb-3 text-xl font-bold">Plan d&apos;entretien</h2>
         <ServicePlan
           vehicleId={vehicle.id}
-          docVersion={planDocVersion}
-          mimeType={servicePlan?.mimeType ?? null}
+          docs={planDocs}
           aiEnabled={SERVICE_PLAN_AI_ENABLED}
           canManage={perms.vehiclesEdit}
           items={planItems}
