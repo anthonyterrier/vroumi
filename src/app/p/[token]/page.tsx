@@ -1,8 +1,9 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import {
-  maintenanceTypeLabel,
   maintenanceTypeKeys,
+  MAINTENANCE_TYPE_LABELS,
   MAINTENANCE_TYPE_ICON,
   VEHICLE_CATEGORY_ICON,
   usageUnitLabel,
@@ -36,9 +37,11 @@ export default async function PublicHistoryPage({
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white">
         <div className="mx-auto flex max-w-2xl items-center gap-2 px-4 py-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icon.svg" alt="" className="h-7 w-7 rounded-lg" />
-          <span className="font-bold text-gray-900">Vroumi</span>
+          <Link href="/login" className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icon.svg" alt="" className="h-7 w-7 rounded-lg" />
+            <span className="font-bold text-gray-900">Vroumi</span>
+          </Link>
           <span className="ml-auto text-xs text-gray-400">
             Historique d&apos;entretien
           </span>
@@ -67,26 +70,39 @@ export default async function PublicHistoryPage({
             </p>
           ) : (
             <div className="space-y-2">
-              {vehicle.maintenances.map((m) => (
-                <div key={m.id} className="rounded-xl bg-white p-3 shadow-sm">
-                  <p className="font-medium">
-                    {maintenanceTypeKeys(m)
-                      .map((k) => MAINTENANCE_TYPE_ICON[k])
-                      .join(" ")}{" "}
-                    {m.title || maintenanceTypeLabel(m)}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {formatDate(m.performedAt)}
-                    {m.mileage != null
-                      ? ` · ${formatUsage(m.mileage, unit)}`
-                      : ""}
-                    {m.serviceName ? ` · ${m.serviceName}` : ""}
-                  </p>
-                  {m.notes && (
-                    <p className="mt-1 text-sm text-gray-600">{m.notes}</p>
-                  )}
-                </div>
-              ))}
+              {vehicle.maintenances.map((m) => {
+                const keys = maintenanceTypeKeys(m);
+                return (
+                  <div key={m.id} className="rounded-xl bg-white p-3 shadow-sm">
+                    <p className="text-xs font-medium text-gray-500">
+                      {formatDate(m.performedAt)}
+                      {m.mileage != null
+                        ? ` · ${formatUsage(m.mileage, unit)}`
+                        : ""}
+                      {m.serviceName ? ` · ${m.serviceName}` : ""}
+                    </p>
+                    <ul className="mt-1.5 space-y-1">
+                      {keys.map((k) => (
+                        <li
+                          key={k}
+                          className="flex items-start gap-2 text-sm text-gray-800"
+                        >
+                          <span className="shrink-0">
+                            {MAINTENANCE_TYPE_ICON[k] ?? "🔧"}
+                          </span>
+                          <span>{MAINTENANCE_TYPE_LABELS[k] ?? k}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {m.title && (
+                      <p className="mt-1.5 text-sm text-gray-600">{m.title}</p>
+                    )}
+                    {m.notes && (
+                      <p className="mt-1 text-sm text-gray-500">{m.notes}</p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
