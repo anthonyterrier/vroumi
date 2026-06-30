@@ -3,6 +3,12 @@
 Guide pour toute instance de Claude Code travaillant sur ce dépôt. Lis-le avant
 de coder.
 
+> ⚙️ **Workflow de livraison (obligatoire)** : après chaque PR, **fusionner sur
+> `main`** sans attendre. Le Pi déploie automatiquement chaque fusion sur `main`
+> (timer systemd, voir `deploy/README.md`) — une PR non fusionnée n'est donc pas
+> déployée. Donc : développer sur la branche → pousser → ouvrir la PR →
+> **merger sur `main`**.
+
 ## En deux mots
 
 **Vroumi** est une application web de **suivi d'entretien automobile**
