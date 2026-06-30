@@ -168,6 +168,11 @@ model Vehicle {
   holderName          String? // C.1 — nom du titulaire
   holderAddress       String? // C.3 — adresse du titulaire
 
+  // Partage public (QR) : page en lecture seule de l'historique d'entretien,
+  // accessible sans connexion via le jeton. Désactivable / régénérable.
+  publicToken   String?         @unique
+  publicEnabled Boolean         @default(false)
+
   createdAt     DateTime        @default(now())
 
   maintenances  Maintenance[]

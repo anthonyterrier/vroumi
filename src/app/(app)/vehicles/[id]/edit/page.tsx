@@ -16,6 +16,8 @@ import { VehicleForm } from "@/components/VehicleForm";
 import { CarteGrise } from "@/components/CarteGrise";
 import { ServicePlan } from "@/components/ServicePlan";
 import { VehicleManual } from "@/components/VehicleManual";
+import { QrLabel } from "@/components/QrLabel";
+import { headers } from "next/headers";
 import { updateVehicle, deleteVehicle } from "@/app/(app)/vehicles/actions";
 import {
   addServiceContact,
@@ -76,6 +78,16 @@ export default async function EditVehiclePage({
   ]
     .filter(Boolean)
     .join(" ")} pdf`;
+
+  // URL publique (QR) — calculée à partir de l'hôte de la requête.
+  const h = await headers();
+  const baseUrl = `${h.get("x-forwarded-proto") ?? "http"}://${
+    h.get("host") ?? "localhost:3000"
+  }`;
+  const publicUrl =
+    vehicle.publicEnabled && vehicle.publicToken
+      ? `${baseUrl}/p/${vehicle.publicToken}`
+      : null;
 
   // Aperçu (dernière analyse) + données carte grise déjà enregistrées (hors
   // champs de base déjà présents dans le formulaire ci-dessus).
@@ -151,6 +163,17 @@ export default async function EditVehiclePage({
           title={manual?.title ?? null}
           canManage={perms.vehiclesEdit}
           searchQuery={manualSearchQuery}
+        />
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-xl font-bold">QR code public</h2>
+        <QrLabel
+          vehicleId={vehicle.id}
+          publicUrl={publicUrl}
+          vehicleName={vehicle.name}
+          plate={vehicle.plate}
+          canManage={perms.vehiclesEdit}
         />
       </section>
 
