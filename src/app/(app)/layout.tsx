@@ -60,7 +60,13 @@ export default async function AppLayout({
                 Admin
               </Link>
             )}
-            <span className="hidden text-gray-500 sm:inline">{user.name}</span>
+            <Link
+              href="/profile"
+              className="font-medium text-gray-600 hover:text-gray-900"
+            >
+              <span className="hidden sm:inline">{user.name}</span>
+              <span className="sm:hidden">Profil</span>
+            </Link>
             <form action={logoutAction}>
               <button className="text-gray-500 hover:text-gray-900">
                 Déconnexion
