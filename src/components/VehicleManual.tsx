@@ -129,7 +129,7 @@ export function VehicleManual({
               <label className="label">
                 …ou importer un fichier{" "}
                 <span className="font-normal text-gray-400">
-                  (PDF, 25 Mo max)
+                  (PDF, 64 Mo max)
                 </span>
               </label>
               <input

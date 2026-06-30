@@ -14,7 +14,7 @@ import {
 import type { ServicePlanItem } from "@/lib/service-plan-fields";
 
 const MAX_PLAN_BYTES = 8 * 1024 * 1024; // 8 Mo (une à deux pages)
-const MAX_MANUAL_BYTES = 25 * 1024 * 1024; // 25 Mo (notice complète)
+const MAX_MANUAL_BYTES = 64 * 1024 * 1024; // 64 Mo (notice complète, parfois lourde)
 
 export type ServicePlanState =
   | { error?: string; message?: string; items?: ServicePlanItem[] }

@@ -29,8 +29,9 @@ const nextConfig: NextConfig = {
     // côté code, voir registration-actions.ts).
     serverActions: {
       // Carte grise / plan d'entretien (images, PDF) + manuel du véhicule
-      // (PDF parfois volumineux). Voir les plafonds par fonctionnalité côté code.
-      bodySizeLimit: "30mb",
+      // (notices PDF parfois très lourdes, ~50 Mo). Voir les plafonds par
+      // fonctionnalité côté code (doc-actions.ts).
+      bodySizeLimit: "70mb",
     },
   },
 };
