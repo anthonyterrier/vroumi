@@ -1,0 +1,11 @@
+[Unit]
+Description=Vroumi — vérifie les mises à jour toutes les 2 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=vroumi-deploy.service
+
+[Install]
+WantedBy=timers.target

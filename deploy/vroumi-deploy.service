@@ -1,0 +1,12 @@
+[Unit]
+Description=Vroumi — déploiement auto (pull/build/restart si la branche a changé)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/vroumi
+# NODE_ENV non forcé ici pour que `npm install` garde les devDependencies.
+ExecStart=/home/pi/vroumi/scripts/deploy.sh
+# Logs visibles via : journalctl -u vroumi-deploy -f
