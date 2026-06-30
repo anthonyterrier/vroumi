@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DeleteButton } from "@/components/DeleteButton";
 import {
@@ -43,14 +43,18 @@ export function ServicePlan({
     analyzeServicePlan.bind(null, vehicleId),
     undefined
   );
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const rows = state?.items ?? items;
+  const MAX_MB = 20;
 
   return (
     <div className="card space-y-4">
       <p className="text-sm text-gray-500">
-        Envoie la page « programme d&apos;entretien » du carnet constructeur :
-        l&apos;IA en extrait les périodicités réelles de ce véhicule, qui
-        remplacent alors les rythmes indicatifs sur l&apos;onglet Entretiens.
+        Envoie <strong>uniquement la ou les page(s) du programme
+        d&apos;entretien</strong> du carnet (pas la notice complète) : l&apos;IA
+        en extrait les périodicités réelles de ce véhicule, qui remplacent les
+        rythmes indicatifs sur l&apos;onglet Entretiens. Taille max {MAX_MB} Mo
+        — pour la notice entière, utilise la section « Manuel ».
       </p>
 
       {hasDoc && (
@@ -125,11 +129,27 @@ export function ServicePlan({
         <form
           action={uploadServicePlan.bind(null, vehicleId)}
           className="space-y-2"
+          onSubmit={(e) => {
+            const input = e.currentTarget.elements.namedItem(
+              "file"
+            ) as HTMLInputElement | null;
+            const f = input?.files?.[0];
+            if (f && f.size > MAX_MB * 1024 * 1024) {
+              e.preventDefault();
+              setUploadError(
+                `Fichier trop volumineux (${(f.size / 1024 / 1024).toFixed(
+                  0
+                )} Mo, max ${MAX_MB} Mo). Envoie seulement la page du programme d'entretien — pas la notice complète.`
+              );
+            } else {
+              setUploadError(null);
+            }
+          }}
         >
           <label className="label">
             {hasDoc ? "Remplacer le document" : "Ajouter le plan d'entretien"}{" "}
             <span className="font-normal text-gray-400">
-              (JPEG, PNG, WebP ou PDF, 8 Mo max)
+              (JPEG, PNG, WebP ou PDF, {MAX_MB} Mo max)
             </span>
           </label>
           <input
@@ -139,6 +159,11 @@ export function ServicePlan({
             className="input"
             required
           />
+          {uploadError && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              {uploadError}
+            </p>
+          )}
           <SubmitButton className="btn-secondary" pendingLabel="Envoi…">
             Envoyer le document
           </SubmitButton>

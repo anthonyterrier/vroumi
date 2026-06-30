@@ -13,7 +13,10 @@ import {
 } from "@/lib/service-plan";
 import type { ServicePlanItem } from "@/lib/service-plan-fields";
 
-const MAX_PLAN_BYTES = 8 * 1024 * 1024; // 8 Mo (une à deux pages)
+// Le document de plan d'entretien est ensuite envoyé à l'IA : l'API limite la
+// taille (~32 Mo, gonflée par l'encodage base64). On plafonne donc à 20 Mo et
+// on invite à n'envoyer que la/les page(s) du programme d'entretien.
+const MAX_PLAN_BYTES = 20 * 1024 * 1024; // 20 Mo
 const MAX_MANUAL_BYTES = 64 * 1024 * 1024; // 64 Mo (notice complète, parfois lourde)
 
 export type ServicePlanState =
