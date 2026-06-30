@@ -4,9 +4,7 @@ import { getAccessibleVehicles, currentMileage } from "@/lib/vehicles";
 import { prisma } from "@/lib/prisma";
 import { Modal } from "@/components/Modal";
 import { VehicleForm } from "@/components/VehicleForm";
-import { SubmitButton } from "@/components/SubmitButton";
 import { createVehicle } from "@/app/(app)/vehicles/actions";
-import { createDemoVehicle } from "@/app/(app)/vehicles/demo-actions";
 import {
   FUEL_TYPE_LABELS,
   VEHICLE_CATEGORY_ICON,
@@ -57,14 +55,6 @@ export default async function DashboardPage() {
           <p className="text-sm text-gray-500">Bonjour {user.name} 👋</p>
         </div>
         <div className="flex items-center gap-2">
-          <form action={createDemoVehicle}>
-            <SubmitButton
-              className="btn-secondary"
-              pendingLabel="Création…"
-            >
-              🧪 Véhicule de démo
-            </SubmitButton>
-          </form>
           <Modal trigger="+ Ajouter un véhicule" title="Ajouter un véhicule">
             <VehicleForm action={createVehicle} submitLabel="Créer le véhicule" />
           </Modal>
