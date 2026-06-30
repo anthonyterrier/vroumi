@@ -178,6 +178,38 @@ model Vehicle {
   reminders     Reminder[]
   shares        VehicleShare[]
   registration  VehicleRegistration?
+  servicePlan   VehicleServicePlan?
+  manual        VehicleManual?
+}
+
+// Plan / programme d'entretien du carnet constructeur, propre au véhicule.
+// Le document source (image/PDF) est conservé + les intervalles extraits par
+// IA (JSON). Quand il existe, il prime sur les rythmes génériques.
+model VehicleServicePlan {
+  id        String   @id @default(cuid())
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId String   @unique
+  data      Bytes? // document source (facultatif)
+  mimeType  String?
+  fileName  String?
+  intervals String   @default("[]") // JSON : [{ label, km, months, note }]
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+// Manuel / notice d'utilisation du véhicule : soit un fichier (PDF) stocké en
+// base, soit un lien externe.
+model VehicleManual {
+  id        String   @id @default(cuid())
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId String   @unique
+  data      Bytes? // fichier (PDF) si uploadé
+  mimeType  String?
+  fileName  String?
+  url       String? // lien externe si renseigné à la place du fichier
+  title     String?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
 }
 
 // Photo de la carte grise, réservée au propriétaire du véhicule (droit

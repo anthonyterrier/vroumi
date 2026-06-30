@@ -23,6 +23,10 @@ import {
   intervalsForVehicle,
   formatInterval,
 } from "@/lib/maintenance-intervals";
+import {
+  parseServicePlan,
+  formatPlanInterval,
+} from "@/lib/service-plan-fields";
 import { formatDate, formatUsage, formatEuro } from "@/lib/format";
 import type { Maintenance } from "@prisma/client";
 
@@ -139,7 +143,7 @@ export default async function MaintenancePage({
   const { id } = await params;
   const { vehicle } = await requireVehicle(id);
 
-  const [items, services, mileage] = await Promise.all([
+  const [items, services, mileage, plan] = await Promise.all([
     prisma.maintenance.findMany({
       where: { vehicleId: vehicle.id },
       orderBy: { performedAt: "desc" },
@@ -149,7 +153,14 @@ export default async function MaintenancePage({
       orderBy: { name: "asc" },
     }),
     currentMileage(vehicle.id, vehicle.initialMileage),
+    prisma.vehicleServicePlan.findUnique({
+      where: { vehicleId: vehicle.id },
+      select: { intervals: true },
+    }),
   ]);
+
+  // Intervalles issus du carnet constructeur (s'ils existent, ils priment).
+  const planItems = parseServicePlan(plan?.intervals);
 
   const addAction = addMaintenance.bind(null, vehicle.id);
   const total = items.reduce((s, m) => s + (m.cost ?? 0), 0);
@@ -172,9 +183,34 @@ export default async function MaintenancePage({
         </Modal>
       </div>
 
+      {planItems.length > 0 && (
+        <details
+          open
+          className="rounded-lg border border-brand-200 bg-brand-50 p-3 text-sm"
+        >
+          <summary className="cursor-pointer font-medium text-brand-800">
+            Plan d&apos;entretien · carnet constructeur
+          </summary>
+          <ul className="mt-2 space-y-1">
+            {planItems.map((it, idx) => (
+              <li
+                key={`${it.label}-${idx}`}
+                className="flex justify-between gap-2 text-gray-700"
+              >
+                <span>{it.label}</span>
+                <span className="text-right text-gray-500">
+                  {formatPlanInterval(it, vehicle.usageUnit)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11px] text-gray-400">{MAINTENANCE_DISCLAIMER}</p>
+        </details>
+      )}
+
       <details className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
         <summary className="cursor-pointer font-medium text-gray-700">
-          Rythmes d&apos;entretien indicatifs ·{" "}
+          Rythmes d&apos;entretien indicatifs (génériques) ·{" "}
           {FUEL_TYPE_LABELS[vehicle.fuelType] ?? "véhicule"}
         </summary>
         <ul className="mt-2 space-y-1">

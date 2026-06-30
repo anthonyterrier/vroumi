@@ -28,7 +28,9 @@ const nextConfig: NextConfig = {
     // pour permettre l'envoi d'une photo / PDF de carte grise (plafonné à 8 Mo
     // côté code, voir registration-actions.ts).
     serverActions: {
-      bodySizeLimit: "10mb",
+      // Carte grise / plan d'entretien (images, PDF) + manuel du véhicule
+      // (PDF parfois volumineux). Voir les plafonds par fonctionnalité côté code.
+      bodySizeLimit: "30mb",
     },
   },
 };
