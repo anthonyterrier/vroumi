@@ -60,6 +60,68 @@ type BluetoothLike = {
 // multiple de 8 (8 px = 1 octet), sinon « Column count must be multiple of 8 ».
 const round8 = (n: number) => Math.max(8, Math.ceil(n / 8) * 8);
 
+// Découpe un texte en lignes qui tiennent dans maxWidth (coupe aux espaces).
+function wrapWords(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number
+): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    const test = cur ? `${cur} ${w}` : w;
+    if (!cur || ctx.measureText(test).width <= maxWidth) {
+      cur = test;
+    } else {
+      lines.push(cur);
+      cur = w;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+// Ajuste la police pour que le texte tienne dans maxWidth sur au plus maxLines
+// lignes : on réduit la taille jusqu'à ce que chaque ligne rentre.
+function fitLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxFont: number,
+  family: string,
+  weight: string,
+  maxLines: number
+): { fontPx: number; lines: string[] } {
+  for (let font = maxFont; font >= 12; font -= 2) {
+    ctx.font = `${weight} ${font}px ${family}`.trim();
+    const lines = wrapWords(ctx, text, maxWidth);
+    if (
+      lines.length <= maxLines &&
+      lines.every((l) => ctx.measureText(l).width <= maxWidth)
+    ) {
+      return { fontPx: font, lines };
+    }
+  }
+  ctx.font = `${weight} 12px ${family}`.trim();
+  return { fontPx: 12, lines: wrapWords(ctx, text, maxWidth).slice(0, maxLines) };
+}
+
+// Ajuste la police d'une ligne unique (sans retour) pour tenir dans maxWidth.
+function fitOneLine(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxFont: number,
+  family: string
+): number {
+  for (let font = maxFont; font >= 10; font -= 1) {
+    ctx.font = `${font}px ${family}`;
+    if (ctx.measureText(text).width <= maxWidth) return font;
+  }
+  return 10;
+}
+
 // Borne le canvas à la largeur de tête d'impression (printheadPixels) pour ne
 // pas rogner le bord. En "top" l'axe tête = largeur ; en "left" = hauteur.
 function clampToHead(
@@ -127,19 +189,51 @@ export function QrLabel({
       await QRCode.toCanvas(qrCanvas, publicUrl, { width: qrSize, margin: 0 });
       ctx.drawImage(qrCanvas, pad, (H - qrSize) / 2, qrSize, qrSize);
 
+      // Colonne de texte à droite du QR : on ajuste tout pour tenir dans sa
+      // largeur (sinon les noms longs débordaient et étaient coupés).
       const tx = pad + qrSize + pad;
+      const maxTextW = W - tx - pad;
       ctx.fillStyle = "#000";
-      let y = Math.round(H * 0.34);
-      ctx.font = `bold ${Math.round(H * 0.12)}px sans-serif`;
-      ctx.fillText(vehicleName.slice(0, 16), tx, y);
-      if (plate) {
-        y += Math.round(H * 0.16);
-        ctx.font = `${Math.round(H * 0.1)}px monospace`;
-        ctx.fillText(plate, tx, y);
+      ctx.textBaseline = "top";
+      let cy = pad;
+
+      // Nom : jusqu'à 2 lignes, police réduite au besoin.
+      const name = vehicleName.trim();
+      const nameFit = fitLines(
+        ctx,
+        name,
+        maxTextW,
+        Math.round(H * 0.15),
+        "sans-serif",
+        "bold",
+        2
+      );
+      ctx.font = `bold ${nameFit.fontPx}px sans-serif`;
+      const nameLH = Math.round(nameFit.fontPx * 1.12);
+      for (const line of nameFit.lines) {
+        ctx.fillText(line, tx, cy);
+        cy += nameLH;
       }
-      ctx.font = `${Math.round(H * 0.065)}px sans-serif`;
-      ctx.fillText("Historique", tx, y + Math.round(H * 0.16));
-      ctx.fillText("d'entretien", tx, y + Math.round(H * 0.235));
+      cy += Math.round(H * 0.05);
+
+      // Plaque : une seule ligne, police réduite pour tenir en largeur.
+      if (plate) {
+        const plateFont = fitOneLine(
+          ctx,
+          plate,
+          maxTextW,
+          Math.round(H * 0.11),
+          "monospace"
+        );
+        ctx.font = `${plateFont}px monospace`;
+        ctx.fillText(plate, tx, cy);
+        cy += Math.round(plateFont * 1.15) + Math.round(H * 0.05);
+      }
+
+      const small = Math.round(H * 0.075);
+      ctx.font = `${small}px sans-serif`;
+      ctx.fillText("Historique", tx, cy);
+      ctx.fillText("d'entretien", tx, cy + Math.round(small * 1.2));
       return canvas;
     }, [publicUrl, vehicleName, plate]);
 
