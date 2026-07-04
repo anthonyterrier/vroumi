@@ -36,10 +36,12 @@ function MaintenanceFields({
   services,
   m,
   unit,
+  allowAttachments = false,
 }: {
   services: { id: string; name: string; brand: string | null; city: string | null }[];
   m?: Maintenance;
   unit: string;
+  allowAttachments?: boolean;
 }) {
   const checked = new Set(m ? maintenanceTypeKeys(m) : ["VIDANGE"]);
   return (
@@ -133,6 +135,22 @@ function MaintenanceFields({
         <label className="label">Notes</label>
         <input name="notes" className="input" defaultValue={m?.notes ?? ""} />
       </div>
+      {allowAttachments && (
+        <div>
+          <label className="label">Factures / photos (optionnel)</label>
+          <input
+            type="file"
+            name="files"
+            multiple
+            accept="image/jpeg,image/png,image/webp,application/pdf"
+            className="w-full text-sm file:mr-2 file:rounded file:border-0 file:bg-gray-100 file:px-2 file:py-1 file:text-xs"
+          />
+          <p className="text-[11px] text-gray-400">
+            Images ou PDF, 20 Mo max par fichier. Vous pourrez aussi en ajouter
+            plus tard sur la fiche de l&apos;entretien.
+          </p>
+        </div>
+      )}
     </>
   );
 }
@@ -184,7 +202,11 @@ export default async function MaintenancePage({
         </div>
         <Modal trigger="+ Entretien" title="Ajouter un entretien">
           <form action={addAction} className="space-y-3">
-            <MaintenanceFields services={services} unit={vehicle.usageUnit} />
+            <MaintenanceFields
+              services={services}
+              unit={vehicle.usageUnit}
+              allowAttachments
+            />
             <p className="text-[11px] text-gray-400">{MAINTENANCE_DISCLAIMER}</p>
             <SubmitButton className="btn-primary w-full">Enregistrer</SubmitButton>
           </form>

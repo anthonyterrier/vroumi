@@ -110,7 +110,7 @@ export async function addMaintenance(vehicleId: string, formData: FormData) {
   const vehicle = await guard(vehicleId, "maintenanceAdd");
   const serviceName = optStr(formData.get("serviceName"));
   const mt = maintenanceTypes(formData);
-  await prisma.maintenance.create({
+  const created = await prisma.maintenance.create({
     data: {
       vehicleId,
       type: mt.type,
@@ -125,6 +125,8 @@ export async function addMaintenance(vehicleId: string, formData: FormData) {
       notes: optStr(formData.get("notes")),
     },
   });
+  // Pièces jointes jointes directement au formulaire de création (facultatif).
+  await saveAttachmentFiles(created.id, formData);
   if (vehicle) await rememberService(vehicle.garageId, serviceName);
   refresh(vehicleId);
 }
@@ -166,6 +168,38 @@ export async function deleteMaintenance(vehicleId: string, id: string) {
 // Limite par fichier : les images/PDF de factures dépassent rarement 20 Mo.
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
+/**
+ * Enregistre les fichiers valides du champ `files` comme pièces jointes de
+ * l'entretien. Ignore silencieusement les fichiers vides, trop lourds ou d'un
+ * type non accepté. Renvoie le nombre de fichiers enregistrés.
+ */
+async function saveAttachmentFiles(
+  maintenanceId: string,
+  formData: FormData
+): Promise<number> {
+  const files = formData
+    .getAll("files")
+    .filter(
+      (f): f is File =>
+        f instanceof File &&
+        f.size > 0 &&
+        f.size <= MAX_ATTACHMENT_BYTES &&
+        isAcceptedUploadType(f.type)
+    );
+  for (const file of files) {
+    const bytes = Buffer.from(await file.arrayBuffer());
+    await prisma.maintenanceAttachment.create({
+      data: {
+        maintenanceId,
+        data: bytes,
+        mimeType: file.type,
+        fileName: file.name || null,
+      },
+    });
+  }
+  return files.length;
+}
+
 /** Ajoute une ou plusieurs pièces jointes à un entretien existant. */
 export async function addMaintenanceAttachments(
   vehicleId: string,
@@ -180,28 +214,7 @@ export async function addMaintenanceAttachments(
   });
   if (!maintenance) return;
 
-  const files = formData
-    .getAll("files")
-    .filter(
-      (f): f is File =>
-        f instanceof File &&
-        f.size > 0 &&
-        f.size <= MAX_ATTACHMENT_BYTES &&
-        isAcceptedUploadType(f.type)
-    );
-  if (files.length === 0) return;
-
-  for (const file of files) {
-    const bytes = Buffer.from(await file.arrayBuffer());
-    await prisma.maintenanceAttachment.create({
-      data: {
-        maintenanceId,
-        data: bytes,
-        mimeType: file.type,
-        fileName: file.name || null,
-      },
-    });
-  }
+  await saveAttachmentFiles(maintenanceId, formData);
   refresh(vehicleId);
 }
 
