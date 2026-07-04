@@ -1,10 +1,12 @@
 import { requireVehicle, currentMileage } from "@/lib/vehicles";
+import { getEffectiveVehiclePerms } from "@/lib/perms";
 import { prisma } from "@/lib/prisma";
 import { Modal } from "@/components/Modal";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DeleteButton } from "@/components/DeleteButton";
 import { TodayDateInput } from "@/components/TodayDateInput";
 import { ServiceSelect } from "@/components/ServiceSelect";
+import { MaintenanceAttachments } from "@/components/MaintenanceAttachments";
 import {
   addMaintenance,
   updateMaintenance,
@@ -141,19 +143,27 @@ export default async function MaintenancePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { vehicle } = await requireVehicle(id);
+  const { user, vehicle } = await requireVehicle(id);
 
-  const [items, services, mileage] = await Promise.all([
+  const [items, services, mileage, perms] = await Promise.all([
     prisma.maintenance.findMany({
       where: { vehicleId: vehicle.id },
       orderBy: { performedAt: "desc" },
+      include: {
+        attachments: {
+          select: { id: true, mimeType: true, fileName: true },
+          orderBy: { createdAt: "asc" },
+        },
+      },
     }),
     prisma.serviceContact.findMany({
       where: { garageId: vehicle.garageId },
       orderBy: { name: "asc" },
     }),
     currentMileage(vehicle.id, vehicle.initialMileage),
+    getEffectiveVehiclePerms(user.id, vehicle.id),
   ]);
+  const canEdit = perms.maintenanceEdit;
 
   // Intervalles issus du carnet constructeur (s'ils existent, ils priment).
   const planItems = parseServicePlan(
@@ -263,6 +273,12 @@ export default async function MaintenancePage({
                 </p>
               ) : null}
               {m.notes && <p className="mt-1 text-sm text-gray-600">{m.notes}</p>}
+              <MaintenanceAttachments
+                vehicleId={vehicle.id}
+                maintenanceId={m.id}
+                attachments={m.attachments}
+                canEdit={canEdit}
+              />
             </div>
             {m.cost != null && (
               <span className="text-sm font-semibold">{formatEuro(m.cost)}</span>
