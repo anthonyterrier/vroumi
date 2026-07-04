@@ -12,6 +12,7 @@ import { requireUser, assertCanWrite } from "@/lib/auth";
 import { assertVehicleAccess, getUserGarageIds } from "@/lib/vehicles";
 import { getVehiclePerms, type PermKey } from "@/lib/perms";
 import { STARTER_SERVICES } from "@/lib/service-catalog";
+import { isAcceptedUploadType } from "@/lib/carte-grise-fields";
 
 // --- Helpers de parsing ---
 
@@ -158,6 +159,63 @@ export async function updateMaintenance(
 export async function deleteMaintenance(vehicleId: string, id: string) {
   await guard(vehicleId, "maintenanceDelete");
   await prisma.maintenance.deleteMany({ where: { id, vehicleId } });
+  refresh(vehicleId);
+}
+
+// Pièces jointes d'un entretien (factures, photos, PDF du contrôle technique).
+// Limite par fichier : les images/PDF de factures dépassent rarement 20 Mo.
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+/** Ajoute une ou plusieurs pièces jointes à un entretien existant. */
+export async function addMaintenanceAttachments(
+  vehicleId: string,
+  maintenanceId: string,
+  formData: FormData
+) {
+  await guard(vehicleId, "maintenanceEdit");
+  // On vérifie que l'entretien appartient bien au véhicule.
+  const maintenance = await prisma.maintenance.findFirst({
+    where: { id: maintenanceId, vehicleId },
+    select: { id: true },
+  });
+  if (!maintenance) return;
+
+  const files = formData
+    .getAll("files")
+    .filter(
+      (f): f is File =>
+        f instanceof File &&
+        f.size > 0 &&
+        f.size <= MAX_ATTACHMENT_BYTES &&
+        isAcceptedUploadType(f.type)
+    );
+  if (files.length === 0) return;
+
+  for (const file of files) {
+    const bytes = Buffer.from(await file.arrayBuffer());
+    await prisma.maintenanceAttachment.create({
+      data: {
+        maintenanceId,
+        data: bytes,
+        mimeType: file.type,
+        fileName: file.name || null,
+      },
+    });
+  }
+  refresh(vehicleId);
+}
+
+/** Supprime une pièce jointe d'un entretien. */
+export async function deleteMaintenanceAttachment(
+  vehicleId: string,
+  attachmentId: string
+) {
+  await guard(vehicleId, "maintenanceEdit");
+  // Filtre par la relation pour garantir que la pièce jointe est bien liée à un
+  // entretien de ce véhicule (jamais par id seul).
+  await prisma.maintenanceAttachment.deleteMany({
+    where: { id: attachmentId, maintenance: { vehicleId } },
+  });
   refresh(vehicleId);
 }
 
