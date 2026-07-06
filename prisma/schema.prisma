@@ -188,6 +188,24 @@ model Vehicle {
   servicePlanIntervals String              @default("[]")
   servicePlanDocs      VehicleServicePlanDoc[]
   manual        VehicleManual?
+  diagnostics   DiagnosticReport[]
+}
+
+// Relevé de diagnostic OBD2 (lecture ELM327 via Web Bluetooth) : codes défaut
+// lus, tension, VIN, horodatage. Journalise l'historique des diagnostics.
+model DiagnosticReport {
+  id          String   @id @default(cuid())
+  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId   String
+  performedAt DateTime @default(now())
+  mileage     Int? // compteur au moment de la lecture
+  codes       String   @default("[]") // JSON : [{ code, description, pending }]
+  voltage     Float? // tension batterie mesurée (ATRV), en volts
+  vin         String? // VIN lu sur le port OBD (mode 09)
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  @@index([vehicleId, performedAt])
 }
 
 // Une page/photo du programme d'entretien du carnet constructeur. Plusieurs par
