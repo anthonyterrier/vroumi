@@ -11,6 +11,7 @@ const TABS = [
   { slug: "mileage", label: "Kilométrage" },
   { slug: "documents", label: "Documents" },
   { slug: "reminders", label: "Rappels" },
+  { slug: "diagnostic", label: "Diagnostic" },
   { slug: "costs", label: "Coûts", perm: "costs" as const },
   { slug: "edit", label: "Profil", perm: "edit" as const },
 ];
