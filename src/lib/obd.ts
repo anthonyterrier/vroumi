@@ -59,12 +59,15 @@ export function isNoData(raw: string): boolean {
 }
 
 /**
- * Extrait les codes défaut d'une réponse mode 03 (stockés) ou 07 (en attente).
- * Tolérant au compteur de DTC (CAN) et aux réponses multi-ECU.
+ * Extrait les codes défaut d'une réponse mode 03 (stockés), 07 (en attente) ou
+ * 0A (permanents). Tolérant au compteur de DTC (CAN) et aux réponses multi-ECU.
  */
-export function parseDtcCodes(raw: string, mode: "03" | "07" = "03"): string[] {
+export function parseDtcCodes(
+  raw: string,
+  mode: "03" | "07" | "0A" = "03"
+): string[] {
   if (isNoData(raw)) return [];
-  const marker = mode === "07" ? 0x47 : 0x43;
+  const marker = mode === "07" ? 0x47 : mode === "0A" ? 0x4a : 0x43;
   const bytes = responseBytes(raw);
   const codes: string[] = [];
   let i = 0;
@@ -132,7 +135,7 @@ export function parseAtrvVoltage(raw: string): number | null {
 
 // Octets de données d'une réponse mode 01 pour un PID donné (ex. "010C" → les
 // octets qui suivent "41 0C").
-function obdDataBytes(raw: string, pidCmd: string): number[] | null {
+export function obdDataBytes(raw: string, pidCmd: string): number[] | null {
   if (isNoData(raw)) return null;
   const respMode = (parseInt(pidCmd.slice(0, 2), 16) + 0x40)
     .toString(16)
@@ -160,7 +163,9 @@ export type LivePid = {
   parse: (b: number[]) => number | null;
 };
 
-/** PID temps réel usuels (mode 01). */
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+/** PID temps réel usuels (mode 01). Filtrés par les PID réellement supportés. */
 export const LIVE_PIDS: LivePid[] = [
   {
     key: "rpm",
@@ -179,7 +184,14 @@ export const LIVE_PIDS: LivePid[] = [
   {
     key: "coolant",
     cmd: "0105",
-    label: "Température liquide",
+    label: "Temp. liquide",
+    unit: "°C",
+    parse: (b) => (b.length >= 1 ? b[0] - 40 : null),
+  },
+  {
+    key: "oil",
+    cmd: "015C",
+    label: "Temp. huile",
     unit: "°C",
     parse: (b) => (b.length >= 1 ? b[0] - 40 : null),
   },
@@ -191,6 +203,14 @@ export const LIVE_PIDS: LivePid[] = [
     parse: (b) => (b.length >= 1 ? Math.round((b[0] * 100) / 255) : null),
   },
   {
+    key: "absLoad",
+    cmd: "0143",
+    label: "Charge absolue",
+    unit: "%",
+    parse: (b) =>
+      b.length >= 2 ? Math.round(((b[0] * 256 + b[1]) * 100) / 255) : null,
+  },
+  {
     key: "throttle",
     cmd: "0111",
     label: "Papillon",
@@ -198,9 +218,65 @@ export const LIVE_PIDS: LivePid[] = [
     parse: (b) => (b.length >= 1 ? Math.round((b[0] * 100) / 255) : null),
   },
   {
+    key: "timing",
+    cmd: "010E",
+    label: "Avance allumage",
+    unit: "°",
+    parse: (b) => (b.length >= 1 ? round1(b[0] / 2 - 64) : null),
+  },
+  {
+    key: "maf",
+    cmd: "0110",
+    label: "Débit d'air (MAF)",
+    unit: "g/s",
+    parse: (b) => (b.length >= 2 ? round1((b[0] * 256 + b[1]) / 100) : null),
+  },
+  {
+    key: "map",
+    cmd: "010B",
+    label: "Pression admission",
+    unit: "kPa",
+    parse: (b) => (b.length >= 1 ? b[0] : null),
+  },
+  {
+    key: "baro",
+    cmd: "0133",
+    label: "Pression atmo.",
+    unit: "kPa",
+    parse: (b) => (b.length >= 1 ? b[0] : null),
+  },
+  {
+    key: "fuelPress",
+    cmd: "010A",
+    label: "Pression carburant",
+    unit: "kPa",
+    parse: (b) => (b.length >= 1 ? b[0] * 3 : null),
+  },
+  {
+    key: "stft",
+    cmd: "0106",
+    label: "Correction court terme",
+    unit: "%",
+    parse: (b) => (b.length >= 1 ? round1((b[0] - 128) * (100 / 128)) : null),
+  },
+  {
+    key: "ltft",
+    cmd: "0107",
+    label: "Correction long terme",
+    unit: "%",
+    parse: (b) => (b.length >= 1 ? round1((b[0] - 128) * (100 / 128)) : null),
+  },
+  {
     key: "intake",
     cmd: "010F",
-    label: "Température admission",
+    label: "Temp. admission",
+    unit: "°C",
+    parse: (b) => (b.length >= 1 ? b[0] - 40 : null),
+  },
+  {
+    key: "ambient",
+    cmd: "0146",
+    label: "Temp. extérieure",
     unit: "°C",
     parse: (b) => (b.length >= 1 ? b[0] - 40 : null),
   },
@@ -212,12 +288,25 @@ export const LIVE_PIDS: LivePid[] = [
     parse: (b) => (b.length >= 1 ? Math.round((b[0] * 100) / 255) : null),
   },
   {
+    key: "runtime",
+    cmd: "011F",
+    label: "Temps moteur",
+    unit: "s",
+    parse: (b) => (b.length >= 2 ? b[0] * 256 + b[1] : null),
+  },
+  {
+    key: "milDist",
+    cmd: "0121",
+    label: "Distance voyant allumé",
+    unit: "km",
+    parse: (b) => (b.length >= 2 ? b[0] * 256 + b[1] : null),
+  },
+  {
     key: "voltage",
     cmd: "0142",
     label: "Tension calculateur",
     unit: "V",
-    parse: (b) =>
-      b.length >= 2 ? Math.round(((b[0] * 256 + b[1]) / 1000) * 10) / 10 : null,
+    parse: (b) => (b.length >= 2 ? round1((b[0] * 256 + b[1]) / 1000) : null),
   },
 ];
 
@@ -225,4 +314,115 @@ export const LIVE_PIDS: LivePid[] = [
 export function parseLivePid(pid: LivePid, raw: string): number | null {
   const bytes = obdDataBytes(raw, pid.cmd);
   return bytes ? pid.parse(bytes) : null;
+}
+
+/**
+ * Analyse une réponse de PID « supportés » (0100, 0120, 0140…) : 4 octets de
+ * masque de bits. Renvoie l'ensemble des numéros de PID supportés (ex. "0C").
+ */
+export function parseSupportedPids(raw: string, cmd: string): Set<string> {
+  const set = new Set<string>();
+  const bytes = obdDataBytes(raw, cmd);
+  if (!bytes || bytes.length < 4) return set;
+  const base = parseInt(cmd.slice(2, 4), 16);
+  for (let i = 0; i < 4; i++) {
+    for (let bit = 0; bit < 8; bit++) {
+      if (bytes[i] & (0x80 >> bit)) {
+        const pidNum = base + i * 8 + bit + 1;
+        set.add(pidNum.toString(16).toUpperCase().padStart(2, "0"));
+      }
+    }
+  }
+  return set;
+}
+
+/** Numéro de PID (partie après le mode) d'une commande, ex. "010C" → "0C". */
+export function pidNumber(cmd: string): string {
+  return cmd.slice(2, 4).toUpperCase();
+}
+
+export type MonitorItem = {
+  key: string;
+  label: string;
+  available: boolean;
+  complete: boolean;
+};
+export type MonitorStatus = {
+  milOn: boolean;
+  dtcCount: number;
+  compressionIgnition: boolean; // true = diesel
+  monitors: MonitorItem[];
+};
+
+// Libellés des contrôles de préparation (readiness monitors).
+const CONTINUOUS_MONITORS: { bit: number; key: string; label: string }[] = [
+  { bit: 0x01, key: "catalyst", label: "Catalyseur" },
+  { bit: 0x02, key: "heatedCatalyst", label: "Catalyseur chauffé" },
+  { bit: 0x04, key: "evap", label: "Système EVAP (vapeurs)" },
+  { bit: 0x08, key: "secondaryAir", label: "Air secondaire" },
+  { bit: 0x10, key: "acRefrigerant", label: "Circuit climatisation" },
+  { bit: 0x20, key: "o2Sensor", label: "Sonde à oxygène" },
+  { bit: 0x40, key: "o2Heater", label: "Chauffage sonde O2" },
+  { bit: 0x80, key: "egr", label: "Vanne EGR" },
+];
+
+/**
+ * État des contrôles de préparation (mode 01 PID 01) : voyant moteur, nombre de
+ * DTC, et statut des « monitors » (utile pour savoir si la voiture est prête
+ * pour le contrôle technique).
+ */
+export function parseMonitorStatus(raw: string): MonitorStatus | null {
+  const b = obdDataBytes(raw, "0101");
+  if (!b || b.length < 4) return null;
+  const [a, bByte, c, d] = b;
+  const milOn = (a & 0x80) !== 0;
+  const dtcCount = a & 0x7f;
+  const compressionIgnition = (bByte & 0x08) !== 0;
+
+  const monitors: MonitorItem[] = [];
+  // Monitors non continus (octet B).
+  const nonContinuous: { bit: number; key: string; label: string }[] = [
+    { bit: 0x01, key: "misfire", label: "Ratés d'allumage" },
+    { bit: 0x02, key: "fuelSystem", label: "Système carburant" },
+    { bit: 0x04, key: "components", label: "Composants" },
+  ];
+  for (const m of nonContinuous) {
+    const available = (bByte & m.bit) !== 0;
+    const incomplete = (bByte & (m.bit << 4)) !== 0;
+    monitors.push({
+      key: m.key,
+      label: m.label,
+      available,
+      complete: available && !incomplete,
+    });
+  }
+  // Monitors continus (octet C = disponible, octet D = incomplet).
+  for (const m of CONTINUOUS_MONITORS) {
+    const available = (c & m.bit) !== 0;
+    const incomplete = (d & m.bit) !== 0;
+    monitors.push({
+      key: m.key,
+      label: m.label,
+      available,
+      complete: available && !incomplete,
+    });
+  }
+  return { milOn, dtcCount, compressionIgnition, monitors };
+}
+
+/** DTC ayant déclenché l'enregistrement du freeze frame (mode 02 PID 02). */
+export function parseFreezeFrameDtc(raw: string): string | null {
+  if (isNoData(raw)) return null;
+  const bytes = responseBytes(raw);
+  for (let i = 0; i + 3 < bytes.length; i++) {
+    // Marqueur 42 02 puis le DTC (2 octets).
+    if (bytes[i] === 0x42 && bytes[i + 1] === 0x02) {
+      const a = bytes[i + 2];
+      const b = bytes[i + 3];
+      if (a === 0 && b === 0) return null;
+      const code = decodeDtcPair(a, b);
+      return isValidDtc(code) ? code : null;
+    }
+  }
+  return null;
 }

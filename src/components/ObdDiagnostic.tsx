@@ -7,6 +7,11 @@ import {
   parseLivePid,
   parseVin,
   parseAtrvVoltage,
+  parseSupportedPids,
+  parseMonitorStatus,
+  parseFreezeFrameDtc,
+  pidNumber,
+  type MonitorStatus,
 } from "@/lib/obd";
 import { describeDtc } from "@/lib/dtc-codes";
 import {
@@ -82,7 +87,10 @@ export function ObdDiagnostic({
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [protocol, setProtocol] = useState<string | null>(null);
   const [codes, setCodes] = useState<DiagnosticCode[]>([]);
+  const [freezeDtc, setFreezeDtc] = useState<string | null>(null);
+  const [monitors, setMonitors] = useState<MonitorStatus | null>(null);
   const [readDone, setReadDone] = useState(false);
   const [vin, setVin] = useState<string | null>(null);
   const [voltage, setVoltage] = useState<number | null>(null);
@@ -95,6 +103,8 @@ export function ObdDiagnostic({
   const connRef = useRef<Conn | null>(null);
   const liveOnRef = useRef(false);
   const liveRunningRef = useRef(false);
+  // PID mode 01 supportés par le véhicule (null = pas encore découverts).
+  const supportedRef = useRef<Set<string> | null>(null);
 
   // --- Transport BLE ------------------------------------------------------
   function onNotify(e: Event) {
@@ -227,6 +237,15 @@ export function ObdDiagnostic({
       }
       // Réveille le bus (sélection auto du protocole).
       await send("0100", 8000).catch(() => {});
+      // Protocole réellement utilisé (ex. « ISO 9141-2 », « CAN 11/500 »).
+      try {
+        const dp = (await send("ATDP", 4000)).replace(/[\r\n>]/g, "").trim();
+        setProtocol(dp || null);
+      } catch {
+        // non bloquant
+      }
+      // Découvre les PID mode 01 supportés (pour n'interroger que l'utile).
+      await discoverSupportedPids();
 
       setConnected(true);
       setStatus("Connecté ✅ — prêt pour le diagnostic.");
@@ -249,6 +268,22 @@ export function ObdDiagnostic({
     setStatus("Déconnecté.");
   }
 
+  // --- Découverte des PID supportés --------------------------------------
+  async function discoverSupportedPids() {
+    const supported = new Set<string>();
+    for (const base of ["0100", "0120", "0140", "0160"]) {
+      try {
+        const s = parseSupportedPids(await send(base, 4000), base);
+        s.forEach((p) => supported.add(p));
+        // Le bit du dernier PID de la plage indique la présence de la suivante ;
+        // en pratique on interroge les 4 premières plages, suffisant ici.
+      } catch {
+        break;
+      }
+    }
+    supportedRef.current = supported.size > 0 ? supported : null;
+  }
+
   // --- Actions de diagnostic ---------------------------------------------
   async function readCodes() {
     setBusy(true);
@@ -256,28 +291,46 @@ export function ObdDiagnostic({
     try {
       const stored = parseDtcCodes(await send("03", 9000), "03");
       const pending = parseDtcCodes(await send("07", 9000), "07");
-      const list: DiagnosticCode[] = [
-        ...stored.map((code) => ({
+      const permanent = parseDtcCodes(await send("0A", 9000), "0A");
+      const seen = new Set<string>();
+      const list: DiagnosticCode[] = [];
+      for (const code of stored) {
+        seen.add(code);
+        list.push({ code, description: describeDtc(code), pending: false });
+      }
+      for (const code of pending) {
+        if (seen.has(code)) continue;
+        seen.add(code);
+        list.push({ code, description: describeDtc(code), pending: true });
+      }
+      for (const code of permanent) {
+        if (seen.has(code)) continue;
+        seen.add(code);
+        list.push({
           code,
-          description: describeDtc(code),
+          description: "Permanent — " + describeDtc(code),
           pending: false,
-        })),
-        ...pending
-          .filter((c) => !stored.includes(c))
-          .map((code) => ({
-            code,
-            description: describeDtc(code),
-            pending: true,
-          })),
-      ];
+        });
+      }
       setCodes(list);
-      setReadDone(true);
-      // Tension batterie au passage.
+
+      // Freeze frame (DTC déclencheur) et état des contrôles de préparation.
+      try {
+        setFreezeDtc(parseFreezeFrameDtc(await send("0202", 8000)));
+      } catch {
+        setFreezeDtc(null);
+      }
+      try {
+        setMonitors(parseMonitorStatus(await send("0101", 6000)));
+      } catch {
+        setMonitors(null);
+      }
       try {
         setVoltage(parseAtrvVoltage(await send("ATRV")));
       } catch {
         // non bloquant
       }
+      setReadDone(true);
       setStatus(
         list.length
           ? `${list.length} code(s) défaut détecté(s).`
@@ -347,9 +400,14 @@ export function ObdDiagnostic({
     setLiveOn(true);
     if (liveRunningRef.current) return;
     liveRunningRef.current = true;
+    // Limite l'interrogation aux PID réellement supportés (si découverts).
+    const supported = supportedRef.current;
+    const pids = supported
+      ? LIVE_PIDS.filter((p) => supported.has(pidNumber(p.cmd)))
+      : LIVE_PIDS;
     try {
       while (liveOnRef.current && connRef.current) {
-        for (const pid of LIVE_PIDS) {
+        for (const pid of pids) {
           if (!liveOnRef.current) break;
           try {
             const v = parseLivePid(pid, await send(pid.cmd, 3000));
@@ -367,11 +425,26 @@ export function ObdDiagnostic({
   async function saveReport() {
     setBusy(true);
     try {
+      const noteParts: string[] = [];
+      if (protocol) noteParts.push(`Protocole : ${protocol}`);
+      if (freezeDtc) noteParts.push(`Freeze frame déclenché par ${freezeDtc}`);
+      if (monitors) {
+        const incomplete = monitors.monitors.filter(
+          (m) => m.available && !m.complete
+        ).length;
+        noteParts.push(
+          monitors.milOn ? "Voyant moteur allumé" : "Voyant moteur éteint",
+          incomplete === 0
+            ? "Contrôles de préparation OK"
+            : `${incomplete} contrôle(s) non prêt(s)`
+        );
+      }
       await saveDiagnosticReport(vehicleId, {
         codes,
         voltage,
         vin,
         mileage: mileage ? parseInt(mileage, 10) : null,
+        notes: noteParts.length ? noteParts.join(" · ") : null,
       });
       setStatus("Diagnostic enregistré dans l'historique ✅");
     } catch (e) {
@@ -410,6 +483,11 @@ export function ObdDiagnostic({
           >
             {connected ? "● Connecté" : "○ Non connecté"}
           </span>
+          {connected && protocol && (
+            <span className="rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">
+              Protocole : {protocol}
+            </span>
+          )}
         </div>
         {status && <p className="text-sm text-gray-600">{status}</p>}
         <p className="text-[11px] text-gray-400">
@@ -446,6 +524,53 @@ export function ObdDiagnostic({
                 </button>
               </div>
             </div>
+
+            {monitors && (
+              <div className="rounded-lg border border-gray-200 p-2 text-sm">
+                <p className="mb-1 font-medium">
+                  Voyant moteur :{" "}
+                  {monitors.milOn ? (
+                    <span className="text-red-600">allumé ⚠️</span>
+                  ) : (
+                    <span className="text-green-600">éteint</span>
+                  )}
+                  {monitors.dtcCount > 0 && (
+                    <span className="text-gray-500">
+                      {" "}
+                      · {monitors.dtcCount} DTC signalé(s)
+                    </span>
+                  )}
+                </p>
+                {readDone && freezeDtc && (
+                  <p className="mb-1 text-xs text-gray-500">
+                    Freeze frame déclenché par{" "}
+                    <span className="font-mono">{freezeDtc}</span>
+                  </p>
+                )}
+                <p className="mt-1 text-xs font-medium text-gray-600">
+                  Préparation au contrôle technique
+                </p>
+                <ul className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2">
+                  {monitors.monitors
+                    .filter((m) => m.available)
+                    .map((m) => (
+                      <li
+                        key={m.key}
+                        className="flex items-center justify-between text-xs"
+                      >
+                        <span className="text-gray-600">{m.label}</span>
+                        <span
+                          className={
+                            m.complete ? "text-green-600" : "text-amber-600"
+                          }
+                        >
+                          {m.complete ? "prêt ✓" : "non prêt"}
+                        </span>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            )}
 
             {readDone && codes.length === 0 && (
               <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
