@@ -5,6 +5,7 @@ import {
   VEHICLE_CATEGORY_LABELS,
   VEHICLE_CATEGORY_ICON,
 } from "@/lib/labels";
+import { INSPECTION_INTERVAL_OPTIONS } from "@/lib/technical-inspection-fields";
 import type { Vehicle } from "@prisma/client";
 
 export function VehicleForm({
@@ -182,6 +183,28 @@ export function VehicleForm({
             placeholder="45"
           />
         </div>
+      </div>
+
+      <div>
+        <label className="label" htmlFor="inspectionIntervalMonths">
+          Périodicité du contrôle technique
+        </label>
+        <select
+          id="inspectionIntervalMonths"
+          name="inspectionIntervalMonths"
+          className="input"
+          defaultValue={String(vehicle?.inspectionIntervalMonths ?? 24)}
+        >
+          {INSPECTION_INTERVAL_OPTIONS.map((o) => (
+            <option key={o.months} value={o.months}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-[11px] text-gray-400">
+          Sert à calculer la date du prochain contrôle après un résultat
+          favorable.
+        </p>
       </div>
 
       <div>
