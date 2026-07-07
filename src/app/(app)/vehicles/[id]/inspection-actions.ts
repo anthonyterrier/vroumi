@@ -10,6 +10,7 @@ import { isAcceptedUploadType } from "@/lib/carte-grise-fields";
 import {
   normalizeResult,
   normalizeSeverity,
+  computeNextInspectionDue,
 } from "@/lib/technical-inspection-fields";
 import { extractInspection, INSPECTION_AI_ENABLED } from "@/lib/technical-inspection";
 
@@ -45,15 +46,20 @@ function optDate(value: string | null): Date | null {
 export async function addInspection(vehicleId: string, formData: FormData) {
   await guard(vehicleId, "documentsAdd");
   const performedAt = optDate(String(formData.get("performedAt") ?? "")) ?? new Date();
+  const result = normalizeResult(String(formData.get("result") ?? ""));
   const mileageRaw = String(formData.get("mileage") ?? "").trim();
+  // Échéance saisie sinon calculée depuis le résultat et la date.
+  const nextDueDate =
+    optDate(String(formData.get("nextDueDate") ?? "")) ??
+    computeNextInspectionDue(performedAt, result);
   await prisma.technicalInspection.create({
     data: {
       vehicleId,
       performedAt,
-      result: normalizeResult(String(formData.get("result") ?? "")) as never,
+      result: result as never,
       mileage: mileageRaw ? parseInt(mileageRaw, 10) || null : null,
       center: String(formData.get("center") ?? "").trim() || null,
-      nextDueDate: optDate(String(formData.get("nextDueDate") ?? "")),
+      nextDueDate,
       notes: String(formData.get("notes") ?? "").trim() || null,
     },
   });
@@ -95,14 +101,19 @@ export async function scanInspection(
     return { error: `L'analyse a échoué : ${detail.slice(0, 300)}` };
   }
 
+  const performedAt = optDate(extracted.date) ?? new Date();
+  const result = normalizeResult(extracted.result);
   await prisma.technicalInspection.create({
     data: {
       vehicleId,
-      performedAt: optDate(extracted.date) ?? new Date(),
-      result: normalizeResult(extracted.result) as never,
+      performedAt,
+      result: result as never,
       mileage: extracted.mileage ?? null,
       center: extracted.center,
-      nextDueDate: optDate(extracted.nextDueDate),
+      // Échéance lue sur le compte rendu, sinon calculée.
+      nextDueDate:
+        optDate(extracted.nextDueDate) ??
+        computeNextInspectionDue(performedAt, result),
       data: bytes,
       mimeType: file.type,
       fileName: file.name || null,

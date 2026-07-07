@@ -75,3 +75,29 @@ export function normalizeResult(value: string | null | undefined): string {
   const v = (value ?? "").toUpperCase();
   return (RESULTS as readonly string[]).includes(v) ? v : "INCONNU";
 }
+
+/**
+ * Calcule la date du prochain passage à partir du résultat et de la date du
+ * contrôle (règles françaises, véhicule particulier) :
+ * - Favorable → prochain contrôle dans 2 ans.
+ * - Contre-visite (majeures) ou défavorable (critiques) → contre-visite à
+ *   effectuer sous 2 mois.
+ * - Résultat inconnu → non calculé (null).
+ */
+export function computeNextInspectionDue(
+  performedAt: Date,
+  result: string
+): Date | null {
+  const d = new Date(performedAt);
+  switch (normalizeResult(result)) {
+    case "FAVORABLE":
+      d.setFullYear(d.getFullYear() + 2);
+      return d;
+    case "CONTRE_VISITE":
+    case "DEFAVORABLE":
+      d.setMonth(d.getMonth() + 2);
+      return d;
+    default:
+      return null;
+  }
+}
