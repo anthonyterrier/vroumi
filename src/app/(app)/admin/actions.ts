@@ -18,20 +18,22 @@ import { isPermKey, roleKey, type RoleKey } from "@/lib/perms";
 
 const INVITE_DAYS = 7;
 
-// Normalise un e-mail facultatif : "" → null.
+// Normalise un e-mail facultatif : "", null ou absent → null.
+// `.nullish()` accepte null ET undefined : indispensable car un champ absent
+// d'un formulaire arrive à `null` via formData.get() (pas `undefined`).
 const optionalEmail = z
   .string()
   .trim()
   .toLowerCase()
   .email("E-mail invalide.")
-  .optional()
+  .nullish()
   .or(z.literal(""))
   .transform((v) => (v ? v : null));
 
 const optionalText = z
   .string()
   .trim()
-  .optional()
+  .nullish()
   .transform((v) => (v ? v : null));
 
 // --- Comptes -------------------------------------------------------------
@@ -116,7 +118,13 @@ export async function inviteUser(formData: FormData) {
     role: formData.get("role"),
     userId: formData.get("userId"),
   });
-  if (!parsed.success) return;
+  if (!parsed.success) {
+    console.error(
+      "Création d'invitation invalide:",
+      parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ")
+    );
+    return;
+  }
 
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + INVITE_DAYS);
