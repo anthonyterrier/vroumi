@@ -53,6 +53,7 @@ const vehicleFields = (formData: FormData) => ({
   fuelType: fuel(formData.get("fuelType")),
   tankCapacity: optFloat(formData.get("tankCapacity")),
   initialMileage: optInt(formData.get("initialMileage")),
+  inspectionIntervalMonths: optInt(formData.get("inspectionIntervalMonths")),
   notes: optString(formData.get("notes")),
 });
 

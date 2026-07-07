@@ -44,14 +44,19 @@ function optDate(value: string | null): Date | null {
 
 /** Ajout manuel d'un contrôle technique (sans scan). */
 export async function addInspection(vehicleId: string, formData: FormData) {
-  await guard(vehicleId, "documentsAdd");
+  const vehicle = await guard(vehicleId, "documentsAdd");
   const performedAt = optDate(String(formData.get("performedAt") ?? "")) ?? new Date();
   const result = normalizeResult(String(formData.get("result") ?? ""));
   const mileageRaw = String(formData.get("mileage") ?? "").trim();
-  // Échéance saisie sinon calculée depuis le résultat et la date.
+  // Échéance saisie sinon calculée depuis le résultat, la date et la
+  // périodicité propre au véhicule.
   const nextDueDate =
     optDate(String(formData.get("nextDueDate") ?? "")) ??
-    computeNextInspectionDue(performedAt, result);
+    computeNextInspectionDue(
+      performedAt,
+      result,
+      vehicle?.inspectionIntervalMonths
+    );
   await prisma.technicalInspection.create({
     data: {
       vehicleId,
@@ -78,7 +83,7 @@ export async function scanInspection(
   if (!INSPECTION_AI_ENABLED) {
     return { error: "L'analyse IA n'est pas configurée sur ce serveur." };
   }
-  await guard(vehicleId, "documentsAdd");
+  const vehicle = await guard(vehicleId, "documentsAdd");
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
@@ -110,10 +115,14 @@ export async function scanInspection(
       result: result as never,
       mileage: extracted.mileage ?? null,
       center: extracted.center,
-      // Échéance lue sur le compte rendu, sinon calculée.
+      // Échéance lue sur le compte rendu, sinon calculée selon la périodicité.
       nextDueDate:
         optDate(extracted.nextDueDate) ??
-        computeNextInspectionDue(performedAt, result),
+        computeNextInspectionDue(
+          performedAt,
+          result,
+          vehicle?.inspectionIntervalMonths
+        ),
       data: bytes,
       mimeType: file.type,
       fileName: file.name || null,

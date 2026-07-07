@@ -144,6 +144,9 @@ model Vehicle {
   fuelType      FuelType        @default(GASOLINE)
   tankCapacity  Float? // capacité du réservoir (L), pour info
   initialMileage Int? // compteur (km ou h) à l'achat / création du profil
+  // Périodicité du contrôle technique en mois (null → 24 = standard 2 ans).
+  // 12 = annuel (taxi, VTC, location…), 60 = collection.
+  inspectionIntervalMonths Int?
   notes         String?
 
   // --- Données issues de la carte grise (certificat d'immatriculation) ---

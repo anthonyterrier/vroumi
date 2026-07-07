@@ -76,22 +76,38 @@ export function normalizeResult(value: string | null | undefined): string {
   return (RESULTS as readonly string[]).includes(v) ? v : "INCONNU";
 }
 
+/** Périodicité par défaut du contrôle technique (mois). */
+export const DEFAULT_INSPECTION_INTERVAL_MONTHS = 24;
+
+/** Choix de périodicité de contrôle technique proposés sur la fiche véhicule. */
+export const INSPECTION_INTERVAL_OPTIONS: { months: number; label: string }[] = [
+  { months: 24, label: "Standard — tous les 2 ans (voiture, utilitaire ≤ 3,5 t)" },
+  {
+    months: 12,
+    label: "Annuel — tous les ans (taxi, VTC, ambulance, auto-école, location)",
+  },
+  { months: 60, label: "Collection — tous les 5 ans (véhicule de collection)" },
+];
+
 /**
- * Calcule la date du prochain passage à partir du résultat et de la date du
- * contrôle (règles françaises, véhicule particulier) :
- * - Favorable → prochain contrôle dans 2 ans.
+ * Calcule la date du prochain passage à partir du résultat, de la date du
+ * contrôle et de la périodicité du véhicule (règles françaises) :
+ * - Favorable → prochain contrôle dans `intervalMonths` (24 par défaut).
  * - Contre-visite (majeures) ou défavorable (critiques) → contre-visite à
- *   effectuer sous 2 mois.
+ *   effectuer sous 2 mois (indépendant de la périodicité).
  * - Résultat inconnu → non calculé (null).
  */
 export function computeNextInspectionDue(
   performedAt: Date,
-  result: string
+  result: string,
+  intervalMonths: number | null | undefined = DEFAULT_INSPECTION_INTERVAL_MONTHS
 ): Date | null {
   const d = new Date(performedAt);
   switch (normalizeResult(result)) {
     case "FAVORABLE":
-      d.setFullYear(d.getFullYear() + 2);
+      d.setMonth(
+        d.getMonth() + (intervalMonths || DEFAULT_INSPECTION_INTERVAL_MONTHS)
+      );
       return d;
     case "CONTRE_VISITE":
     case "DEFAVORABLE":
