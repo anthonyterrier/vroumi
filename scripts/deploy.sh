@@ -40,6 +40,26 @@ git reset --hard "origin/$BRANCH"
 # NODE_ENV=production.
 npm install --include=dev --no-audit --no-fund
 
+# Sauvegarde de la base AVANT toute évolution de schéma. `db push` est lancé
+# avec --accept-data-loss (nécessaire à l'automatisation) : en cas de
+# changement destructif, la sauvegarde permet de restaurer. On garde les 30
+# dernières copies dans backups/ (non suivi par git, préservé par reset --hard).
+DB_URL="$(grep -E '^DATABASE_URL=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "\"'" || true)"
+DB_REL="${DB_URL#file:}"
+if [ -n "$DB_REL" ]; then
+  case "$DB_REL" in
+    /*) DB_PATH="$DB_REL" ;;          # chemin absolu
+    *) DB_PATH="prisma/${DB_REL#./}" ;; # file: est résolu depuis prisma/
+  esac
+  if [ -f "$DB_PATH" ]; then
+    mkdir -p backups
+    cp "$DB_PATH" "backups/$(basename "$DB_PATH" .db)-$(date +%Y%m%d-%H%M%S).db"
+    # Ne garde que les 30 sauvegardes les plus récentes.
+    ls -1t backups/*.db 2>/dev/null | tail -n +31 | xargs -r rm -f
+    echo "$(date '+%F %T') sauvegarde base : $DB_PATH"
+  fi
+fi
+
 # Applique les évolutions de schéma (nouvelles tables/colonnes).
 npx prisma db push --skip-generate --accept-data-loss
 

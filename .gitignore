@@ -27,6 +27,11 @@ yarn-error.log*
 # database (SQLite dev)
 /prisma/*.db
 /prisma/*.db-journal
+/prisma/*.db-wal
+/prisma/*.db-shm
+
+# sauvegardes de base créées au déploiement
+/backups/
 
 # typescript
 *.tsbuildinfo
