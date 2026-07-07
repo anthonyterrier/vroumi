@@ -58,6 +58,11 @@ sudo systemctl disable --now vroumi-deploy.timer
 
 - Le build se fait pendant que l'ancienne version tourne ; le redémarrage n'a
   lieu **qu'en cas de build réussi**.
+- Chaque déploiement supprime `.next` avant de reconstruire (build propre) pour
+  éviter les incohérences de build incrémental — symptôme typique : la page
+  s'affiche **sans aucun style** (le HTML pointe vers un CSS `/_next/...` d'un
+  ancien build qui renvoie 400/404). Si ça se reproduit, forcer manuellement :
+  `cd /home/pi/vroumi && rm -rf .next && npm run build && sudo systemctl restart vroumi`.
 - `git reset --hard origin/main` ne touche pas aux fichiers ignorés
   (`.env`, `prod.db`…).
 - `prisma db push --accept-data-loss` applique les changements de schéma sans

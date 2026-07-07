@@ -43,6 +43,11 @@ npm install --include=dev --no-audit --no-fund
 # Applique les évolutions de schéma (nouvelles tables/colonnes).
 npx prisma db push --skip-generate --accept-data-loss
 
+# Build PROPRE : on repart d'un .next vide. Un build incrémental peut laisser du
+# HTML référençant le hash d'un asset (ex. CSS) d'un build précédent : cet asset
+# n'existant plus, il renvoie 400/404 et toute la page perd son style.
+rm -rf .next
+
 # Build (prisma generate + next build). `set -e` stoppe ici en cas d'échec,
 # donc le service n'est pas redémarré.
 npm run build
