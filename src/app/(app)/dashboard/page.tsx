@@ -25,7 +25,7 @@ export default async function DashboardPage() {
   >();
   await Promise.all(
     vehicles.map(async (v) => {
-      const [mileage, reminder, doc] = await Promise.all([
+      const [mileage, reminder, doc, inspection] = await Promise.all([
         currentMileage(v.id, v.initialMileage),
         prisma.reminder.findFirst({
           where: { vehicleId: v.id, done: false, dueDate: { not: null } },
@@ -35,10 +35,18 @@ export default async function DashboardPage() {
           where: { vehicleId: v.id, expiresAt: { not: null } },
           orderBy: { expiresAt: "asc" },
         }),
+        // Échéance du prochain contrôle technique (contrôle le plus récent).
+        prisma.technicalInspection.findFirst({
+          where: { vehicleId: v.id, nextDueDate: { not: null } },
+          orderBy: { performedAt: "desc" },
+          select: { nextDueDate: true },
+        }),
       ]);
-      const dates = [reminder?.dueDate, doc?.expiresAt].filter(
-        (d): d is Date => d != null
-      );
+      const dates = [
+        reminder?.dueDate,
+        doc?.expiresAt,
+        inspection?.nextDueDate,
+      ].filter((d): d is Date => d != null);
       const nextDue =
         dates.length > 0
           ? new Date(Math.min(...dates.map((d) => d.getTime())))

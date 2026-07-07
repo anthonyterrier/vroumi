@@ -93,7 +93,12 @@ export default async function InspectionPage({
                     <input name="mileage" type="number" className="input" />
                   </div>
                   <div>
-                    <label className="label">Prochaine échéance</label>
+                    <label className="label">
+                      Prochaine échéance{" "}
+                      <span className="font-normal text-gray-400">
+                        (calculée si vide)
+                      </span>
+                    </label>
                     <TodayDateInput name="nextDueDate" optional />
                   </div>
                 </div>
@@ -148,7 +153,12 @@ export default async function InspectionPage({
                         : ""}
                       {insp.center ? ` · ${insp.center}` : ""}
                       {insp.nextDueDate
-                        ? ` · échéance ${formatDate(insp.nextDueDate)}`
+                        ? ` · ${
+                            insp.result === "FAVORABLE" ||
+                            insp.result === "INCONNU"
+                              ? "prochain contrôle"
+                              : "contre-visite avant"
+                          } ${formatDate(insp.nextDueDate)}`
                         : ""}
                     </p>
                   </div>
