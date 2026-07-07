@@ -189,6 +189,63 @@ model Vehicle {
   servicePlanDocs      VehicleServicePlanDoc[]
   manual        VehicleManual?
   diagnostics   DiagnosticReport[]
+  inspections   TechnicalInspection[]
+}
+
+// --- Contrôle technique ---
+
+enum TechnicalInspectionResult {
+  FAVORABLE     // A — favorable, aucune défaillance majeure/critique
+  CONTRE_VISITE // S — défaillances majeures → contre-visite sous 2 mois
+  DEFAVORABLE   // R — défaillances critiques → circulation restreinte
+  INCONNU
+}
+
+enum InspectionDefectSeverity {
+  MINEURE
+  MAJEURE
+  CRITIQUE
+  INCONNUE
+}
+
+// Contrôle technique d'un véhicule + compte rendu scanné (analysé par IA pour en
+// extraire les défaillances). Le suivi des points à traiter se fait via les
+// InspectionDefect liés (case « réparé »).
+model TechnicalInspection {
+  id          String                    @id @default(cuid())
+  vehicle     Vehicle                   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId   String
+  performedAt DateTime
+  result      TechnicalInspectionResult @default(INCONNU)
+  mileage     Int?
+  center      String? // nom du centre de contrôle
+  nextDueDate DateTime? // prochaine échéance (contre-visite ou prochain CT)
+  // Compte rendu scanné (image ou PDF), stocké en base.
+  data        Bytes?
+  mimeType    String?
+  fileName    String?
+  extractedAt DateTime? // date de la dernière analyse IA
+  notes       String?
+  createdAt   DateTime                  @default(now())
+  defects     InspectionDefect[]
+
+  @@index([vehicleId, performedAt])
+}
+
+// Point / défaillance relevé lors d'un contrôle technique, avec suivi de
+// traitement (case « réparé »).
+model InspectionDefect {
+  id           String                   @id @default(cuid())
+  inspection   TechnicalInspection      @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  inspectionId String
+  severity     InspectionDefectSeverity @default(INCONNUE)
+  code         String? // code de défaillance (ex. 5.2.3.a)
+  description  String
+  fixed        Boolean                  @default(false)
+  fixedAt      DateTime?
+  createdAt    DateTime                 @default(now())
+
+  @@index([inspectionId])
 }
 
 // Relevé de diagnostic OBD2 (lecture ELM327 via Web Bluetooth) : codes défaut

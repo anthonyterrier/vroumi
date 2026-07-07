@@ -10,6 +10,7 @@ const TABS = [
   { slug: "fuel", label: "Carburant" },
   { slug: "mileage", label: "Kilométrage" },
   { slug: "documents", label: "Documents" },
+  { slug: "inspection", label: "Contrôle technique" },
   { slug: "reminders", label: "Rappels" },
   { slug: "diagnostic", label: "Diagnostic" },
   { slug: "costs", label: "Coûts", perm: "costs" as const },
