@@ -142,6 +142,8 @@ export function ObdDiagnostic({
   const connRef = useRef<Conn | null>(null);
   const liveOnRef = useRef(false);
   const liveRunningRef = useRef(false);
+  // Signature des codes du dernier relevé enregistré automatiquement (dédup).
+  const lastSavedRef = useRef<string | null>(null);
   // PID mode 01 supportés par le véhicule (null = pas encore découverts).
   const supportedRef = useRef<Set<string> | null>(null);
 
@@ -359,6 +361,37 @@ export function ObdDiagnostic({
     setSupportedPids(supported);
   }
 
+  // Enregistre un relevé automatiquement si les codes ont changé depuis le
+  // dernier (dédup). Renvoie true si un relevé a été créé.
+  async function maybeAutoSave(
+    list: DiagnosticCode[],
+    voltageVal: number | null
+  ): Promise<boolean> {
+    if (!canJournal) return false;
+    const sig = list
+      .map((c) => c.code)
+      .sort()
+      .join(",");
+    const priorSig =
+      lastSavedRef.current ?? [...lastReportCodes].sort().join(",");
+    const hasPrior = lastReportDate != null || lastSavedRef.current != null;
+    // Rien de nouveau depuis le dernier relevé → on n'enregistre pas de doublon.
+    if (hasPrior && sig === priorSig) return false;
+    lastSavedRef.current = sig;
+    try {
+      await saveDiagnosticReport(vehicleId, {
+        codes: list,
+        voltage: voltageVal,
+        vin,
+        mileage:
+          live.odometer ?? (mileage ? parseInt(mileage, 10) || null : null),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // --- Actions de diagnostic ---------------------------------------------
   async function readCodes() {
     setBusy(true);
@@ -432,8 +465,10 @@ export function ObdDiagnostic({
       } catch {
         setMonitors(null);
       }
+      let voltageVal: number | null = null;
       try {
-        setVoltage(parseAtrvVoltage(await send("ATRV")));
+        voltageVal = parseAtrvVoltage(await send("ATRV"));
+        setVoltage(voltageVal);
       } catch {
         // non bloquant
       }
@@ -444,10 +479,14 @@ export function ObdDiagnostic({
           "Le véhicule n'a pas répondu à la demande de codes (mode 03). Réessaie, contact mis, moteur tournant."
         );
       } else {
+        // Enregistrement AUTOMATIQUE dans l'historique, uniquement si les codes
+        // ont changé depuis le dernier relevé (évite les doublons).
+        const saved = await maybeAutoSave(list, voltageVal);
         setStatus(
-          list.length
+          (list.length
             ? `${list.length} code(s) défaut détecté(s).`
-            : "Aucun code défaut détecté 🎉"
+            : "Aucun code défaut détecté 🎉") +
+            (saved ? " · relevé enregistré ✓" : "")
         );
       }
     } catch (e) {
@@ -934,24 +973,31 @@ export function ObdDiagnostic({
             )}
 
             {canJournal && readDone && (
-              <div className="flex flex-wrap items-end gap-2 border-t border-gray-100 pt-3">
-                <div>
-                  <label className="label">Compteur (km)</label>
-                  <input
-                    type="number"
-                    value={mileage}
-                    onChange={(e) => setMileage(e.target.value)}
-                    className="input w-32"
-                  />
+              <div className="space-y-1 border-t border-gray-100 pt-3">
+                <p className="text-[11px] text-gray-400">
+                  Chaque lecture est enregistrée automatiquement quand les codes
+                  changent. Tu peux aussi forcer un relevé avec un kilométrage
+                  précis :
+                </p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div>
+                    <label className="label">Compteur (km)</label>
+                    <input
+                      type="number"
+                      value={mileage}
+                      onChange={(e) => setMileage(e.target.value)}
+                      className="input w-32"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={saveReport}
+                    disabled={busy}
+                    className="btn-secondary px-3 py-2 text-sm disabled:opacity-60"
+                  >
+                    Enregistrer un relevé
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={saveReport}
-                  disabled={busy}
-                  className="btn-primary px-3 py-2 text-sm disabled:opacity-60"
-                >
-                  Enregistrer dans l&apos;historique
-                </button>
               </div>
             )}
           </div>

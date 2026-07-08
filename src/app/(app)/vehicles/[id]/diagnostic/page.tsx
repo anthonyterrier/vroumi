@@ -67,7 +67,8 @@ export default async function DiagnosticPage({
           <h3 className="font-semibold">Historique des diagnostics</h3>
           <p className="text-xs text-gray-400">
             La voiture ne conserve pas d&apos;historique daté ; il est reconstruit
-            en comparant vos relevés successifs (codes apparus / disparus).
+            à partir des relevés — <strong>enregistrés automatiquement</strong> à
+            chaque lecture quand les codes changent (apparus / disparus).
           </p>
           {history.map((entry, i) => {
             const { r, codes } = entry;
