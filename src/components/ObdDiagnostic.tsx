@@ -37,6 +37,7 @@ type BtService = { getCharacteristics: () => Promise<BtChar[]> };
 type BtServer = {
   connect: () => Promise<BtServer>;
   getPrimaryServices: () => Promise<BtService[]>;
+  getPrimaryService: (uuid: string) => Promise<BtService>;
   disconnect: () => void;
 };
 type BtDevice = {
@@ -55,11 +56,14 @@ type BtLike = {
 const u16 = (n: number) =>
   `0000${n.toString(16).padStart(4, "0")}-0000-1000-8000-00805f9b34fb`;
 const OBD_SERVICES = [
-  u16(0xfff0),
-  u16(0xffe0),
+  u16(0xfff0), // vLinker / vgate iCar Pro (fff1 notify / fff2 write)
+  u16(0xffe0), // HM-10 & clones (ffe1 read+write+notify)
   u16(0xffe5),
   u16(0xffb0),
   u16(0xff00),
+  u16(0x18f0), // certains modules BLE série
+  u16(0xfee7),
+  u16(0xfff6),
   "6e400001-b5a3-f393-e0a9-e50e24dcca9e", // Nordic UART
 ];
 const DEVICE_ID_KEY = "obd.deviceId";
@@ -191,12 +195,28 @@ export function ObdDiagnostic({
       }
       if (!device.gatt) throw new Error("GATT indisponible sur cet appareil.");
       const server = await device.gatt.connect();
-      const services = await server.getPrimaryServices();
 
+      // On interroge CHAQUE service candidat par son UUID (getPrimaryService),
+      // plutôt que getPrimaryServices() sans argument — ce dernier échoue sur
+      // Bluefy/iOS (« No Services found in device ») même quand le service
+      // existe. On s'arrête au premier service exposant write + notify.
       let writeChar: BtChar | undefined;
       let notifyChar: BtChar | undefined;
-      for (const s of services) {
-        const chars = await s.getCharacteristics();
+      for (const uuid of OBD_SERVICES) {
+        let service: BtService;
+        try {
+          service = await server.getPrimaryService(uuid);
+        } catch {
+          continue; // service absent sur cet appareil → suivant
+        }
+        let chars: BtChar[];
+        try {
+          chars = await service.getCharacteristics();
+        } catch {
+          continue;
+        }
+        writeChar = undefined;
+        notifyChar = undefined;
         for (const ch of chars) {
           if (!notifyChar && ch.properties.notify) notifyChar = ch;
           if (
@@ -206,10 +226,11 @@ export function ObdDiagnostic({
             writeChar = ch;
           }
         }
+        if (writeChar && notifyChar) break;
       }
       if (!writeChar || !notifyChar) {
         throw new Error(
-          "Caractéristiques série introuvables. Cet adaptateur n'est peut-être pas un ELM327 BLE compatible."
+          "Service série ELM327 introuvable sur cet adaptateur (aucun des UUID connus). Envoie-moi le modèle exact et je l'ajoute."
         );
       }
 
