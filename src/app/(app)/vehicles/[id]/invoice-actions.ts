@@ -1,11 +1,14 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { Prisma, MaintenanceType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser, assertCanWrite } from "@/lib/auth";
 import { assertVehicleAccess } from "@/lib/vehicles";
 import { getVehiclePerms } from "@/lib/perms";
 import { isAcceptedUploadType } from "@/lib/carte-grise-fields";
+import { MAINTENANCE_TYPE_LABELS } from "@/lib/labels";
 import {
   extractMaintenanceInvoice,
   INVOICE_AI_ENABLED,
@@ -59,4 +62,59 @@ export async function analyzeInvoice(
     console.error("Analyse facture échouée:", detail);
     return { error: `L'analyse a échoué : ${detail.slice(0, 300)}` };
   }
+}
+
+/**
+ * Analyse une pièce jointe DÉJÀ enregistrée (facture stockée) et met à jour
+ * l'entretien avec les champs détectés (ne touche qu'aux champs trouvés).
+ */
+export async function analyzeAttachment(
+  vehicleId: string,
+  attachmentId: string
+) {
+  if (!INVOICE_AI_ENABLED) return;
+  const user = await requireUser();
+  await assertCanWrite();
+  const vehicle = await assertVehicleAccess(user.id, vehicleId);
+  if (!vehicle) redirect("/dashboard");
+  if (!(await getVehiclePerms(user.id, vehicleId)).maintenanceEdit) {
+    redirect(`/vehicles/${vehicleId}`);
+  }
+
+  const att = await prisma.maintenanceAttachment.findFirst({
+    where: { id: attachmentId, maintenance: { vehicleId } },
+    select: { maintenanceId: true, data: true, mimeType: true },
+  });
+  if (!att) return;
+
+  let ext;
+  try {
+    ext = await extractMaintenanceInvoice(Buffer.from(att.data), att.mimeType);
+  } catch (e) {
+    console.error("Analyse pièce jointe échouée:", e);
+    return;
+  }
+
+  const data: Prisma.MaintenanceUpdateInput = {};
+  if (ext.date) {
+    const d = new Date(ext.date);
+    if (!isNaN(d.getTime())) data.performedAt = d;
+  }
+  if (ext.mileage != null) data.mileage = ext.mileage;
+  if (ext.cost != null) data.cost = ext.cost;
+  if (ext.serviceName) data.serviceName = ext.serviceName;
+  if (ext.title) data.title = ext.title;
+  const validTypes = ext.types.filter((t) => t in MAINTENANCE_TYPE_LABELS);
+  if (validTypes.length) {
+    data.type = validTypes[0] as MaintenanceType;
+    data.types = validTypes.join(",");
+  }
+
+  if (Object.keys(data).length > 0) {
+    await prisma.maintenance.update({
+      where: { id: att.maintenanceId },
+      data,
+    });
+  }
+  revalidatePath(`/vehicles/${vehicleId}`, "layout");
 }

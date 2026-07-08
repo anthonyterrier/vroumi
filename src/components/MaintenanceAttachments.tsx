@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useTransition } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DeleteButton } from "@/components/DeleteButton";
 import {
   addMaintenanceAttachments,
   deleteMaintenanceAttachment,
 } from "@/app/(app)/vehicles/[id]/actions";
+import { analyzeAttachment } from "@/app/(app)/vehicles/[id]/invoice-actions";
 import { isPdf } from "@/lib/carte-grise-fields";
 
 type Attachment = {
@@ -17,16 +18,50 @@ type Attachment = {
 
 const MAX_MB = 20;
 
+/** Bouton « Analyser avec l'IA » sur une pièce jointe déjà enregistrée. */
+function AnalyzeButton({
+  vehicleId,
+  attachmentId,
+}: {
+  vehicleId: string;
+  attachmentId: string;
+}) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <button
+      type="button"
+      title="Analyser avec l'IA et remplir l'entretien"
+      disabled={pending}
+      onClick={() => {
+        if (
+          !confirm(
+            "Analyser cette pièce jointe avec l'IA et remplir l'entretien à partir de son contenu ?"
+          )
+        )
+          return;
+        startTransition(() => {
+          analyzeAttachment(vehicleId, attachmentId);
+        });
+      }}
+      className="absolute -bottom-1.5 -left-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-[10px] leading-none text-white shadow hover:bg-brand-700 disabled:opacity-60"
+    >
+      {pending ? "…" : "🔎"}
+    </button>
+  );
+}
+
 export function MaintenanceAttachments({
   vehicleId,
   maintenanceId,
   attachments,
   canEdit,
+  aiEnabled = false,
 }: {
   vehicleId: string;
   maintenanceId: string;
   attachments: Attachment[];
   canEdit: boolean;
+  aiEnabled?: boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [tooBig, setTooBig] = useState(false);
@@ -79,6 +114,9 @@ export function MaintenanceAttachments({
                     className="flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[11px] leading-none text-white shadow hover:bg-red-700"
                   />
                 </form>
+              )}
+              {canEdit && aiEnabled && (
+                <AnalyzeButton vehicleId={vehicleId} attachmentId={a.id} />
               )}
             </div>
           ))}
