@@ -13,6 +13,8 @@ import { assertVehicleAccess, getUserGarageIds } from "@/lib/vehicles";
 import { getVehiclePerms, type PermKey } from "@/lib/perms";
 import { STARTER_SERVICES } from "@/lib/service-catalog";
 import { isAcceptedUploadType } from "@/lib/carte-grise-fields";
+import { parseServicePlan } from "@/lib/service-plan-fields";
+import { suggestNextDueFromPlan } from "@/lib/maintenance-intervals";
 
 // --- Helpers de parsing ---
 
@@ -110,18 +112,40 @@ export async function addMaintenance(vehicleId: string, formData: FormData) {
   const vehicle = await guard(vehicleId, "maintenanceAdd");
   const serviceName = optStr(formData.get("serviceName"));
   const mt = maintenanceTypes(formData);
+  const performedAt = reqDate(formData.get("performedAt"));
+  const mileage = optInt(formData.get("mileage"));
+
+  // Échéance : saisie sinon calculée automatiquement depuis le carnet
+  // (plan d'entretien) — repli sur les intervalles génériques.
+  let nextDueDate = optDate(formData.get("nextDueDate"));
+  let nextDueMileage = optInt(formData.get("nextDueMileage"));
+  if (nextDueDate == null && nextDueMileage == null && vehicle) {
+    const plan = parseServicePlan(
+      (vehicle as unknown as { servicePlanIntervals?: string }).servicePlanIntervals
+    );
+    const s = suggestNextDueFromPlan(
+      mt.type,
+      plan,
+      performedAt,
+      mileage,
+      vehicle.fuelType
+    );
+    nextDueDate = s.nextDueDate;
+    nextDueMileage = s.nextDueMileage;
+  }
+
   const created = await prisma.maintenance.create({
     data: {
       vehicleId,
       type: mt.type,
       types: mt.types,
       title: optStr(formData.get("title")),
-      performedAt: reqDate(formData.get("performedAt")),
-      mileage: optInt(formData.get("mileage")),
+      performedAt,
+      mileage,
       cost: optFloat(formData.get("cost")),
       serviceName,
-      nextDueDate: optDate(formData.get("nextDueDate")),
-      nextDueMileage: optInt(formData.get("nextDueMileage")),
+      nextDueDate,
+      nextDueMileage,
       notes: optStr(formData.get("notes")),
     },
   });
