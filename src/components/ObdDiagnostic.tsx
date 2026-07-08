@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   LIVE_PIDS,
   FREEZE_PID_KEYS,
@@ -85,6 +85,7 @@ const OBD_SERVICES = [
   "6e400001-b5a3-f393-e0a9-e50e24dcca9e", // Nordic UART
 ];
 const DEVICE_ID_KEY = "obd.deviceId";
+const DEVICE_NAME_KEY = "obd.deviceName";
 
 type Conn = {
   device: BtDevice;
@@ -121,6 +122,8 @@ export function ObdDiagnostic({
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  // Nom du dernier adaptateur mémorisé (pour la reconnexion automatique).
+  const [rememberedName, setRememberedName] = useState<string | null>(null);
   const [protocol, setProtocol] = useState<string | null>(null);
   const [ecuName, setEcuName] = useState<string | null>(null);
   const [codes, setCodes] = useState<DiagnosticCode[]>([]);
@@ -206,7 +209,137 @@ export function ObdDiagnostic({
     });
   }
 
-  async function connect() {
+  // Retrouve l'adaptateur déjà autorisé/mémorisé (sans ouvrir le sélecteur).
+  // Nécessite navigator.bluetooth.getDevices() (Chrome/Chromium ; absent sur
+  // certains navigateurs iOS).
+  async function getRememberedDevice(): Promise<BtDevice | null> {
+    const bt = (navigator as unknown as { bluetooth: BtLike }).bluetooth;
+    if (!bt.getDevices) return null;
+    try {
+      const known = await bt.getDevices();
+      if (!known.length) return null;
+      const saved = localStorage.getItem(DEVICE_ID_KEY);
+      if (saved) {
+        const match = known.find((x) => x.id === saved);
+        if (match) return match;
+      }
+      // Un seul appareil déjà autorisé → on le prend.
+      return known.length === 1 ? known[0] : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Établit la liaison GATT + découverte des caractéristiques, initialise
+  // l'ELM327 et lance la lecture automatique. Commun à la connexion manuelle
+  // et à la reconnexion automatique.
+  async function setupDevice(device: BtDevice) {
+    if (!device.gatt) throw new Error("GATT indisponible sur cet appareil.");
+    const server = await device.gatt.connect();
+
+    // On interroge CHAQUE service candidat par son UUID (getPrimaryService),
+    // plutôt que getPrimaryServices() sans argument — ce dernier échoue sur
+    // Bluefy/iOS (« No Services found in device ») même quand le service
+    // existe. On s'arrête au premier service exposant write + notify.
+    let writeChar: BtChar | undefined;
+    let notifyChar: BtChar | undefined;
+    for (const uuid of OBD_SERVICES) {
+      let service: BtService;
+      try {
+        service = await server.getPrimaryService(uuid);
+      } catch {
+        continue; // service absent sur cet appareil → suivant
+      }
+      let chars: BtChar[];
+      try {
+        chars = await service.getCharacteristics();
+      } catch {
+        continue;
+      }
+      writeChar = undefined;
+      notifyChar = undefined;
+      for (const ch of chars) {
+        if (!notifyChar && ch.properties.notify) notifyChar = ch;
+        if (
+          !writeChar &&
+          (ch.properties.write || ch.properties.writeWithoutResponse)
+        ) {
+          writeChar = ch;
+        }
+      }
+      if (writeChar && notifyChar) break;
+    }
+    if (!writeChar || !notifyChar) {
+      throw new Error(
+        "Service série ELM327 introuvable sur cet adaptateur (aucun des UUID connus). Envoie-moi le modèle exact et je l'ajoute."
+      );
+    }
+
+    await notifyChar.startNotifications();
+    notifyChar.addEventListener("characteristicvaluechanged", onNotify);
+    connRef.current = {
+      device,
+      writeChar,
+      notifyChar,
+      buffer: "",
+      resolver: null,
+      timer: null,
+    };
+    device.addEventListener("gattserverdisconnected", () => {
+      stopLive();
+      connRef.current = null;
+      setConnected(false);
+      setStatus("Adaptateur déconnecté.");
+    });
+
+    // Séquence d'initialisation ELM327.
+    await send("ATZ", 6000).catch(() => {});
+    for (const cmd of ["ATE0", "ATL0", "ATS0", "ATSP0", "ATH0"]) {
+      await send(cmd).catch(() => {});
+    }
+    // Réveille le bus (sélection auto du protocole).
+    await send("0100", 8000).catch(() => {});
+    // Protocole réellement utilisé (ex. « ISO 9141-2 », « CAN 11/500 »).
+    try {
+      const dp = (await send("ATDP", 4000)).replace(/[\r\n>]/g, "").trim();
+      setProtocol(dp || null);
+    } catch {
+      // non bloquant
+    }
+    // Nom du calculateur (mode 09 PID 0A), si fourni.
+    try {
+      setEcuName(parseEcuName(await send("090A", 5000)));
+    } catch {
+      setEcuName(null);
+    }
+    // Découvre les PID mode 01 supportés (pour n'interroger que l'utile).
+    await discoverSupportedPids();
+
+    setConnected(true);
+    setStatus("Connecté ✅ — lecture automatique en cours…");
+
+    // À la connexion, on enchaîne automatiquement : VIN, codes défaut, puis
+    // démarrage des données temps réel. (Ces fonctions gèrent leurs propres
+    // erreurs et ne relancent pas d'exception.)
+    await readVin();
+    await readCodes();
+    startLive();
+  }
+
+  // Mémorise l'appareil retenu (id + nom) pour la prochaine reconnexion.
+  function rememberDevice(device: BtDevice) {
+    try {
+      localStorage.setItem(DEVICE_ID_KEY, device.id);
+      localStorage.setItem(DEVICE_NAME_KEY, device.name ?? "");
+    } catch {
+      // stockage indisponible : sans conséquence.
+    }
+    setRememberedName(device.name ?? null);
+  }
+
+  // Connexion : par défaut on réutilise l'adaptateur mémorisé (sans sélecteur) ;
+  // forceChooser ouvre le sélecteur pour changer d'adaptateur.
+  async function connect(forceChooser = false) {
     if (!("bluetooth" in navigator) || !window.isSecureContext) {
       setStatus(
         "Web Bluetooth indisponible : utilise Chrome/Chromium (PC, Android) ou Bluefy (iOS), et accède au site en HTTPS."
@@ -214,135 +347,65 @@ export function ObdDiagnostic({
       return;
     }
     setBusy(true);
-    setStatus("Connexion à l'adaptateur…");
     const bt = (navigator as unknown as { bluetooth: BtLike }).bluetooth;
-    const orig = bt.requestDevice.bind(bt);
-    bt.requestDevice = async () => {
-      try {
-        const saved = localStorage.getItem(DEVICE_ID_KEY);
-        if (saved && bt.getDevices) {
-          const known = await bt.getDevices();
-          const d = known.find((x) => x.id === saved);
-          if (d) return d;
-        }
-      } catch {
-        // getDevices / localStorage indisponible → sélection manuelle.
-      }
-      const d = await orig({
-        acceptAllDevices: true,
-        optionalServices: OBD_SERVICES,
-      });
-      try {
-        localStorage.setItem(DEVICE_ID_KEY, d.id);
-      } catch {
-        // stockage indisponible : sans conséquence.
-      }
-      return d;
-    };
-
     try {
-      let device: BtDevice;
-      try {
-        device = await bt.requestDevice();
-      } finally {
-        bt.requestDevice = orig;
+      let device: BtDevice | null = null;
+      if (!forceChooser) {
+        device = await getRememberedDevice();
+        if (device) setStatus(`Reconnexion à ${device.name ?? "l'adaptateur"}…`);
       }
-      if (!device.gatt) throw new Error("GATT indisponible sur cet appareil.");
-      const server = await device.gatt.connect();
-
-      // On interroge CHAQUE service candidat par son UUID (getPrimaryService),
-      // plutôt que getPrimaryServices() sans argument — ce dernier échoue sur
-      // Bluefy/iOS (« No Services found in device ») même quand le service
-      // existe. On s'arrête au premier service exposant write + notify.
-      let writeChar: BtChar | undefined;
-      let notifyChar: BtChar | undefined;
-      for (const uuid of OBD_SERVICES) {
-        let service: BtService;
-        try {
-          service = await server.getPrimaryService(uuid);
-        } catch {
-          continue; // service absent sur cet appareil → suivant
-        }
-        let chars: BtChar[];
-        try {
-          chars = await service.getCharacteristics();
-        } catch {
-          continue;
-        }
-        writeChar = undefined;
-        notifyChar = undefined;
-        for (const ch of chars) {
-          if (!notifyChar && ch.properties.notify) notifyChar = ch;
-          if (
-            !writeChar &&
-            (ch.properties.write || ch.properties.writeWithoutResponse)
-          ) {
-            writeChar = ch;
-          }
-        }
-        if (writeChar && notifyChar) break;
+      if (!device) {
+        setStatus("Sélection de l'adaptateur…");
+        device = await bt.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: OBD_SERVICES,
+        });
       }
-      if (!writeChar || !notifyChar) {
-        throw new Error(
-          "Service série ELM327 introuvable sur cet adaptateur (aucun des UUID connus). Envoie-moi le modèle exact et je l'ajoute."
-        );
-      }
-
-      await notifyChar.startNotifications();
-      notifyChar.addEventListener("characteristicvaluechanged", onNotify);
-      connRef.current = {
-        device,
-        writeChar,
-        notifyChar,
-        buffer: "",
-        resolver: null,
-        timer: null,
-      };
-      device.addEventListener("gattserverdisconnected", () => {
-        stopLive();
-        connRef.current = null;
-        setConnected(false);
-        setStatus("Adaptateur déconnecté.");
-      });
-
-      // Séquence d'initialisation ELM327.
-      await send("ATZ", 6000).catch(() => {});
-      for (const cmd of ["ATE0", "ATL0", "ATS0", "ATSP0", "ATH0"]) {
-        await send(cmd).catch(() => {});
-      }
-      // Réveille le bus (sélection auto du protocole).
-      await send("0100", 8000).catch(() => {});
-      // Protocole réellement utilisé (ex. « ISO 9141-2 », « CAN 11/500 »).
-      try {
-        const dp = (await send("ATDP", 4000)).replace(/[\r\n>]/g, "").trim();
-        setProtocol(dp || null);
-      } catch {
-        // non bloquant
-      }
-      // Nom du calculateur (mode 09 PID 0A), si fourni.
-      try {
-        setEcuName(parseEcuName(await send("090A", 5000)));
-      } catch {
-        setEcuName(null);
-      }
-      // Découvre les PID mode 01 supportés (pour n'interroger que l'utile).
-      await discoverSupportedPids();
-
-      setConnected(true);
-      setStatus("Connecté ✅ — lecture automatique en cours…");
-
-      // À la connexion, on enchaîne automatiquement : VIN, codes défaut, puis
-      // démarrage des données temps réel. (Ces fonctions gèrent leurs propres
-      // erreurs et ne relancent pas d'exception.)
-      await readVin();
-      await readCodes();
-      startLive();
+      rememberDevice(device);
+      await setupDevice(device);
     } catch (e) {
       setStatus("Connexion impossible : " + (e as Error).message);
     } finally {
       setBusy(false);
     }
   }
+
+  // Au chargement : affiche le dernier adaptateur mémorisé et tente une
+  // reconnexion automatique s'il est déjà autorisé et à portée. Ne requiert pas
+  // de geste utilisateur car on ne passe pas par le sélecteur.
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const name = localStorage.getItem(DEVICE_NAME_KEY);
+      if (name) setRememberedName(name);
+    } catch {
+      // stockage indisponible
+    }
+    if (!("bluetooth" in navigator) || !window.isSecureContext) return;
+    (async () => {
+      const device = await getRememberedDevice();
+      if (cancelled || !device) return;
+      setRememberedName(device.name ?? null);
+      setBusy(true);
+      setStatus(`Reconnexion automatique à ${device.name ?? "l'adaptateur"}…`);
+      try {
+        await setupDevice(device);
+      } catch {
+        // Échec silencieux : l'adaptateur est peut-être éteint / hors de portée.
+        if (!cancelled) {
+          setStatus(
+            `Dernier adaptateur : ${device.name ?? "mémorisé"}. Appuie sur « Connecter » (vérifie qu'il est branché et allumé).`
+          );
+        }
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function disconnect() {
     stopLive();
@@ -782,6 +845,12 @@ export function ObdDiagnostic({
     }
   }
 
+  // PID temps réel réellement affichables (définis ET supportés). Le nombre de
+  // PID « supportés » inclut des états internes (bitmaps, statuts) sans tuile.
+  const displayedLivePids = supportedPids.size
+    ? LIVE_PIDS.filter((p) => supportedPids.has(pidNumber(p.cmd)))
+    : LIVE_PIDS;
+
   return (
     <div className="space-y-4">
       <div className="card space-y-3">
@@ -789,11 +858,14 @@ export function ObdDiagnostic({
           {!connected ? (
             <button
               type="button"
-              onClick={connect}
+              onClick={() => connect()}
               disabled={busy}
               className="btn-primary disabled:opacity-60"
             >
-              🔌 Connecter l&apos;adaptateur OBD2
+              🔌{" "}
+              {rememberedName
+                ? `Connecter ${rememberedName}`
+                : "Connecter l'adaptateur OBD2"}
             </button>
           ) : (
             <button
@@ -802,6 +874,16 @@ export function ObdDiagnostic({
               className="btn-secondary"
             >
               Déconnecter
+            </button>
+          )}
+          {!connected && rememberedName && (
+            <button
+              type="button"
+              onClick={() => connect(true)}
+              disabled={busy}
+              className="text-xs text-brand-600 hover:underline disabled:opacity-60"
+            >
+              Changer d&apos;adaptateur
             </button>
           )}
           <span
@@ -1131,10 +1213,7 @@ export function ObdDiagnostic({
               )}
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {(supportedPids.size
-                ? LIVE_PIDS.filter((p) => supportedPids.has(pidNumber(p.cmd)))
-                : LIVE_PIDS
-              ).map((pid) => {
+              {displayedLivePids.map((pid) => {
                 const v = live[pid.key];
                 return (
                   <div
@@ -1171,8 +1250,11 @@ export function ObdDiagnostic({
               </div>
             )}
             <p className="text-[11px] text-gray-400">
-              Seules les données supportées par ce véhicule sont affichées
-              ({supportedPids.size} paramètre(s) détecté(s)).
+              {displayedLivePids.length} mesure(s) affichée(s)
+              {supportedPids.size > displayedLivePids.length
+                ? ` sur ${supportedPids.size} paramètre(s) détecté(s) — les autres sont des états internes (bitmaps, statuts) sans valeur à afficher`
+                : ""}
+              .
             </p>
           </div>
 
