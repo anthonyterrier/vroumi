@@ -280,7 +280,9 @@ model VehicleKnowledge {
   make      String?
   model     String?
   year      Int?
-  data      String // JSON (VehicleKnowledge structuré)
+  data      String   @default("") // JSON (VehicleKnowledge structuré), vide tant que pending
+  status    String   @default("ready") // pending | ready | error (recherche asynchrone)
+  error     String? // message d'erreur si la recherche a échoué
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
