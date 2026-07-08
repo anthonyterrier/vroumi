@@ -8,6 +8,13 @@ import {
   VEHICLE_CATEGORY_ICON,
   usageUnitLabel,
 } from "@/lib/labels";
+import {
+  INSPECTION_RESULT_LABELS,
+  INSPECTION_RESULT_STYLE,
+  DEFECT_SEVERITY_LABELS,
+  DEFECT_SEVERITY_STYLE,
+  DEFECT_SEVERITY_ORDER,
+} from "@/lib/technical-inspection-fields";
 import { formatDate, formatUsage } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +31,10 @@ export default async function PublicHistoryPage({
     include: {
       maintenances: { orderBy: { performedAt: "desc" } },
       repairs: { orderBy: { performedAt: "desc" } },
+      inspections: {
+        orderBy: { performedAt: "desc" },
+        include: { defects: true },
+      },
     },
   });
   if (!vehicle) notFound();
@@ -138,6 +149,95 @@ export default async function PublicHistoryPage({
                   )}
                 </div>
               ))}
+            </div>
+          )}
+        </section>
+
+        {/* Contrôles techniques */}
+        <section>
+          <h2 className="mb-2 text-lg font-semibold">Contrôles techniques</h2>
+          {vehicle.inspections.length === 0 ? (
+            <p className="rounded-xl bg-white p-4 text-center text-sm text-gray-400 shadow-sm">
+              Aucun contrôle technique enregistré.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {vehicle.inspections.map((insp) => {
+                const defects = [...insp.defects].sort(
+                  (a, b) =>
+                    Number(a.fixed) - Number(b.fixed) ||
+                    (DEFECT_SEVERITY_ORDER[a.severity] ?? 9) -
+                      (DEFECT_SEVERITY_ORDER[b.severity] ?? 9)
+                );
+                const fixedCount = defects.filter((d) => d.fixed).length;
+                return (
+                  <div key={insp.id} className="rounded-xl bg-white p-3 shadow-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`rounded border px-1.5 py-0.5 text-[11px] ${INSPECTION_RESULT_STYLE[insp.result]}`}
+                      >
+                        {INSPECTION_RESULT_LABELS[insp.result]}
+                      </span>
+                      <span className="text-sm font-medium">
+                        {formatDate(insp.performedAt)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {insp.mileage != null
+                        ? formatUsage(insp.mileage, unit)
+                        : ""}
+                      {insp.center ? ` · ${insp.center}` : ""}
+                      {insp.nextDueDate
+                        ? ` · ${
+                            insp.result === "FAVORABLE" ||
+                            insp.result === "INCONNU"
+                              ? "prochain contrôle"
+                              : "contre-visite avant"
+                          } ${formatDate(insp.nextDueDate)}`
+                        : ""}
+                    </p>
+                    {defects.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-[11px] font-medium text-gray-500">
+                          Points relevés — {fixedCount}/{defects.length} traité(s)
+                        </p>
+                        <ul className="mt-1 space-y-1">
+                          {defects.map((d) => (
+                            <li
+                              key={d.id}
+                              className="flex items-start justify-between gap-2 text-sm"
+                            >
+                              <span className="flex items-start gap-1.5">
+                                <span
+                                  className={`mt-0.5 shrink-0 rounded border px-1 py-0.5 text-[10px] ${DEFECT_SEVERITY_STYLE[d.severity]}`}
+                                >
+                                  {DEFECT_SEVERITY_LABELS[d.severity]}
+                                </span>
+                                <span
+                                  className={
+                                    d.fixed
+                                      ? "text-gray-400 line-through"
+                                      : "text-gray-700"
+                                  }
+                                >
+                                  {d.description}
+                                </span>
+                              </span>
+                              <span
+                                className={`shrink-0 text-[11px] ${
+                                  d.fixed ? "text-green-600" : "text-amber-600"
+                                }`}
+                              >
+                                {d.fixed ? "réparé" : "à faire"}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
