@@ -8,11 +8,20 @@ import { assertVehicleAccess, currentMileage } from "@/lib/vehicles";
 import { getVehiclePerms } from "@/lib/perms";
 import { runObdDiagnosis, OBD_AI_ENABLED } from "@/lib/obd-diagnosis";
 import { runResetProcedure, OBD_RESET_AI_ENABLED } from "@/lib/obd-reset";
+import {
+  researchVehicleKnowledge,
+  VEHICLE_KNOWLEDGE_AI_ENABLED,
+} from "@/lib/vehicle-knowledge";
 import type {
   ObdDiagnosis,
   ObdSnapshot,
 } from "@/lib/obd-diagnosis-fields";
 import type { ResetProcedure } from "@/lib/obd-reset-fields";
+import {
+  VehicleKnowledgeSchema,
+  knowledgeKey,
+  type VehicleKnowledge,
+} from "@/lib/vehicle-knowledge-fields";
 
 export type ObdDiagnosisState =
   | { error?: string; diagnosis?: ObdDiagnosis }
@@ -96,6 +105,24 @@ export async function diagnoseWithAI(
   if (!vehicle) return { error: "Véhicule introuvable." };
 
   const mileage = await currentMileage(vehicle.id, vehicle.initialMileage);
+
+  // On réutilise la base de connaissances du modèle (pannes fréquentes déjà
+  // recensées) pour affiner le diagnostic, si elle existe en cache.
+  let knowledgeContext: string | null = null;
+  const key = knowledgeKey(vehicle.make, vehicle.model, vehicle.year);
+  if (key) {
+    const cached = await prisma.vehicleKnowledge.findUnique({ where: { key } });
+    const knowledge = cached ? parseKnowledge(cached.data) : null;
+    if (knowledge && knowledge.commonFaults.length) {
+      knowledgeContext = knowledge.commonFaults
+        .map(
+          (f) =>
+            `- ${[f.code, f.title].filter(Boolean).join(" ")} : ${f.description}`
+        )
+        .join("\n");
+    }
+  }
+
   try {
     const diagnosis = await runObdDiagnosis(
       {
@@ -106,7 +133,8 @@ export async function diagnoseWithAI(
         fuelType: vehicle.fuelType,
         mileage,
       },
-      snapshot
+      snapshot,
+      knowledgeContext
     );
     // On conserve le diagnostic avec le relevé, seulement s'il y a des codes.
     if (snapshot.codes.length > 0) {
@@ -156,6 +184,119 @@ export async function resetProcedureFromVin(
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
     console.error("Recherche procédure de réinitialisation échouée:", detail);
+    return { error: `La recherche a échoué : ${detail.slice(0, 300)}` };
+  }
+}
+
+export type VehicleKnowledgeState =
+  | {
+      error?: string;
+      knowledge?: VehicleKnowledge;
+      updatedAt?: string;
+      fromCache?: boolean;
+    }
+  | undefined;
+
+// Fraîcheur du cache : au-delà, on rafraîchit à la connexion.
+const KNOWLEDGE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 jours
+
+/** Parse le JSON stocké en base de connaissances de façon tolérante. */
+function parseKnowledge(data: string): VehicleKnowledge | null {
+  try {
+    const r = VehicleKnowledgeSchema.safeParse(JSON.parse(data));
+    return r.success ? r.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Renvoie la base de connaissances du modèle. La construit par recherche IA si
+ * absente (ou périmée) ; sinon renvoie la version en cache. `force` force une
+ * nouvelle recherche.
+ */
+export async function ensureVehicleKnowledge(
+  vehicleId: string,
+  force = false
+): Promise<VehicleKnowledgeState> {
+  const user = await requireUser();
+  const vehicle = await assertVehicleAccess(user.id, vehicleId);
+  if (!vehicle) return { error: "Véhicule introuvable." };
+
+  const key = knowledgeKey(vehicle.make, vehicle.model, vehicle.year);
+  if (!key) {
+    return {
+      error:
+        "Renseigne la marque, le modèle et l'année du véhicule pour construire la base de connaissances.",
+    };
+  }
+
+  const existing = await prisma.vehicleKnowledge.findUnique({ where: { key } });
+  if (existing && !force) {
+    const fresh =
+      Date.now() - existing.updatedAt.getTime() < KNOWLEDGE_TTL_MS;
+    const knowledge = parseKnowledge(existing.data);
+    if (fresh && knowledge) {
+      return {
+        knowledge,
+        updatedAt: existing.updatedAt.toISOString(),
+        fromCache: true,
+      };
+    }
+  }
+
+  if (!VEHICLE_KNOWLEDGE_AI_ENABLED) {
+    // Pas d'IA : on renvoie le cache s'il existe, sinon une erreur douce.
+    if (existing) {
+      const knowledge = parseKnowledge(existing.data);
+      if (knowledge)
+        return {
+          knowledge,
+          updatedAt: existing.updatedAt.toISOString(),
+          fromCache: true,
+        };
+    }
+    return { error: "La recherche IA n'est pas configurée sur ce serveur." };
+  }
+
+  try {
+    const knowledge = await researchVehicleKnowledge({
+      make: vehicle.make,
+      model: vehicle.model,
+      year: vehicle.year,
+      fuelType: vehicle.fuelType,
+      vin: vehicle.vin,
+    });
+    const data = JSON.stringify(knowledge);
+    const saved = await prisma.vehicleKnowledge.upsert({
+      where: { key },
+      create: {
+        key,
+        make: vehicle.make,
+        model: vehicle.model,
+        year: vehicle.year,
+        data,
+      },
+      update: { data },
+    });
+    return {
+      knowledge,
+      updatedAt: saved.updatedAt.toISOString(),
+      fromCache: false,
+    };
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    console.error("Recherche base de connaissances échouée:", detail);
+    // On retombe sur le cache si disponible.
+    if (existing) {
+      const knowledge = parseKnowledge(existing.data);
+      if (knowledge)
+        return {
+          knowledge,
+          updatedAt: existing.updatedAt.toISOString(),
+          fromCache: true,
+        };
+    }
     return { error: `La recherche a échoué : ${detail.slice(0, 300)}` };
   }
 }
