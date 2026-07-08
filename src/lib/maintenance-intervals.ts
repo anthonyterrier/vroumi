@@ -2,6 +2,8 @@
 // ordres de grandeur courants et NE remplacent PAS le carnet d'entretien du
 // constructeur : reportez-vous toujours aux préconisations de votre véhicule.
 
+import type { ServicePlanItem } from "@/lib/service-plan-fields";
+
 export type Interval = { km?: number; months?: number };
 
 // Valeurs de base (véhicule essence). Adaptées ensuite selon le carburant via
@@ -114,4 +116,82 @@ export function suggestNextDue(
   }
 
   return { nextDueDate, nextDueMileage };
+}
+
+// Mots-clés pour rattacher une ligne du carnet (libellé libre) à un type
+// d'entretien. Permet d'utiliser les intervalles du plan constructeur.
+const PLAN_KEYWORDS: Record<string, string[]> = {
+  VIDANGE: ["vidange", "huile moteur"],
+  FILTRE_HUILE: ["filtre à huile", "filtre huile"],
+  FILTRE_AIR: ["filtre à air", "filtre air"],
+  FILTRE_HABITACLE: ["habitacle", "pollen"],
+  FILTRE_CARBURANT: ["filtre à carburant", "filtre carburant", "gasoil", "gazole"],
+  FREINS: ["frein", "plaquette", "disque"],
+  LIQUIDE_DE_FREIN: ["liquide de frein"],
+  PNEUS: ["pneu", "pneumatique"],
+  COURROIE_DISTRIBUTION: ["distribution"],
+  COURROIE_ACCESSOIRE: ["accessoire"],
+  BOUGIES: ["bougie"],
+  BATTERIE: ["batterie"],
+  AMORTISSEURS: ["amortisseur", "suspension"],
+  CLIMATISATION: ["clim"],
+  LIQUIDE_REFROIDISSEMENT: ["refroidissement"],
+  ESSUIE_GLACE: ["essuie", "balai"],
+  REVISION: ["révision", "revision", "entretien périodique"],
+};
+
+/** Cherche l'intervalle correspondant à un type dans le plan (carnet), ou null. */
+function planIntervalForType(
+  type: string,
+  plan: ServicePlanItem[]
+): Interval | null {
+  const kws = PLAN_KEYWORDS[type];
+  if (!kws || plan.length === 0) return null;
+  for (const item of plan) {
+    const label = item.label.toLowerCase();
+    if (kws.some((k) => label.includes(k))) {
+      return {
+        km: item.km ?? undefined,
+        months: item.months ?? undefined,
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Échéance suggérée en privilégiant le carnet constructeur (plan d'entretien)
+ * s'il contient une ligne correspondant au type ; sinon repli sur les
+ * intervalles génériques adaptés au carburant.
+ */
+export function suggestNextDueFromPlan(
+  type: string,
+  plan: ServicePlanItem[],
+  fromDate: Date,
+  fromMileage: number | null | undefined,
+  fuelType?: string | null
+): {
+  nextDueDate: Date | null;
+  nextDueMileage: number | null;
+  source: "plan" | "generic" | "none";
+} {
+  const planInterval = planIntervalForType(type, plan);
+  const interval = planInterval ?? intervalsForVehicle(fuelType)[type];
+  if (!interval) return { nextDueDate: null, nextDueMileage: null, source: "none" };
+
+  let nextDueDate: Date | null = null;
+  if (interval.months) {
+    const d = new Date(fromDate);
+    d.setMonth(d.getMonth() + interval.months);
+    nextDueDate = d;
+  }
+  let nextDueMileage: number | null = null;
+  if (interval.km && fromMileage != null) {
+    nextDueMileage = fromMileage + interval.km;
+  }
+  return {
+    nextDueDate,
+    nextDueMileage,
+    source: planInterval ? "plan" : "generic",
+  };
 }
