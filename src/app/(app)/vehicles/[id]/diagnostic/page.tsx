@@ -5,6 +5,7 @@ import { ObdDiagnostic } from "@/components/ObdDiagnostic";
 import { DeleteButton } from "@/components/DeleteButton";
 import { deleteDiagnosticReport } from "@/app/(app)/vehicles/[id]/diagnostic-actions";
 import { OBD_AI_ENABLED } from "@/lib/obd-diagnosis";
+import { OBD_RESET_AI_ENABLED } from "@/lib/obd-reset";
 import {
   ObdDiagnosisSchema,
   SEVERITY_STYLE,
@@ -78,6 +79,8 @@ export default async function DiagnosticPage({
         canJournal={perms.maintenanceAdd}
         canSaveMileage={perms.mileageAdd}
         aiEnabled={OBD_AI_ENABLED}
+        resetAiEnabled={OBD_RESET_AI_ENABLED}
+        vehicleVin={vehicle.vin}
         currentMileage={mileage}
         lastReportCodes={lastReportCodes}
         lastReportDate={lastReportDate}

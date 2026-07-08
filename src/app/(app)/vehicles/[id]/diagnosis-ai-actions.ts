@@ -7,10 +7,12 @@ import { requireUser, assertCanWrite } from "@/lib/auth";
 import { assertVehicleAccess, currentMileage } from "@/lib/vehicles";
 import { getVehiclePerms } from "@/lib/perms";
 import { runObdDiagnosis, OBD_AI_ENABLED } from "@/lib/obd-diagnosis";
+import { runResetProcedure, OBD_RESET_AI_ENABLED } from "@/lib/obd-reset";
 import type {
   ObdDiagnosis,
   ObdSnapshot,
 } from "@/lib/obd-diagnosis-fields";
+import type { ResetProcedure } from "@/lib/obd-reset-fields";
 
 export type ObdDiagnosisState =
   | { error?: string; diagnosis?: ObdDiagnosis }
@@ -120,6 +122,41 @@ export async function diagnoseWithAI(
     const detail = e instanceof Error ? e.message : String(e);
     console.error("Aide au diagnostic IA échouée:", detail);
     return { error: `L'analyse a échoué : ${detail.slice(0, 300)}` };
+  }
+}
+
+export type ResetProcedureState =
+  | { error?: string; procedure?: ResetProcedure }
+  | undefined;
+
+/** Recherche IA (web) de la procédure de réinitialisation d'entretien via le VIN. */
+export async function resetProcedureFromVin(
+  vehicleId: string,
+  vin: string
+): Promise<ResetProcedureState> {
+  if (!OBD_RESET_AI_ENABLED) {
+    return { error: "La recherche IA n'est pas configurée sur ce serveur." };
+  }
+  const cleanVin = vin.trim().toUpperCase();
+  if (cleanVin.length < 11) {
+    return { error: "VIN invalide ou incomplet." };
+  }
+  const user = await requireUser();
+  const vehicle = await assertVehicleAccess(user.id, vehicleId);
+  if (!vehicle) return { error: "Véhicule introuvable." };
+
+  try {
+    const procedure = await runResetProcedure(cleanVin, {
+      name: vehicle.name,
+      make: vehicle.make,
+      model: vehicle.model,
+      year: vehicle.year,
+    });
+    return { procedure };
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    console.error("Recherche procédure de réinitialisation échouée:", detail);
+    return { error: `La recherche a échoué : ${detail.slice(0, 300)}` };
   }
 }
 
