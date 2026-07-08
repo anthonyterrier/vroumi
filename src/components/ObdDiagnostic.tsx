@@ -12,6 +12,8 @@ import {
   parseMonitorStatus,
   parseFreezeFrameDtc,
   parseEcuName,
+  parseCalibrationId,
+  parseCvn,
   freezeCommand,
   parseFreezePid,
   pidNumber,
@@ -26,6 +28,7 @@ import {
 import {
   diagnoseWithAI,
   saveOdometer,
+  resetProcedureFromVin,
 } from "@/app/(app)/vehicles/[id]/diagnosis-ai-actions";
 import {
   SEVERITY_STYLE,
@@ -33,6 +36,7 @@ import {
   type ObdDiagnosis,
   type ObdSnapshot,
 } from "@/lib/obd-diagnosis-fields";
+import type { ResetProcedure } from "@/lib/obd-reset-fields";
 
 // --- Types Web Bluetooth minimaux (absents de lib.dom par défaut) ---------
 type BtChar = {
@@ -97,6 +101,8 @@ export function ObdDiagnostic({
   canJournal,
   canSaveMileage,
   aiEnabled,
+  resetAiEnabled,
+  vehicleVin,
   currentMileage,
   lastReportCodes,
   lastReportDate,
@@ -106,6 +112,8 @@ export function ObdDiagnostic({
   canJournal: boolean;
   canSaveMileage: boolean;
   aiEnabled: boolean;
+  resetAiEnabled: boolean;
+  vehicleVin: string | null;
   currentMileage: number | null;
   lastReportCodes: string[];
   lastReportDate: string | null;
@@ -127,9 +135,18 @@ export function ObdDiagnostic({
   const [live, setLive] = useState<Record<string, number | null>>({});
   const [supportedPids, setSupportedPids] = useState<Set<string>>(new Set());
   const [liveOn, setLiveOn] = useState(false);
+  // Extraction automatique de toutes les infos véhicule (mode 09 + AT).
+  const [vehicleInfo, setVehicleInfo] = useState<
+    { label: string; value: string }[]
+  >([]);
+  const [infoBusy, setInfoBusy] = useState(false);
   // Console de commandes brute (mode avancé).
   const [rawCmd, setRawCmd] = useState("");
   const [rawLog, setRawLog] = useState<{ cmd: string; res: string }[]>([]);
+  // Recherche IA de la procédure de réinitialisation d'entretien (via VIN).
+  const [resetProc, setResetProc] = useState<ResetProcedure | null>(null);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
   // Aide au diagnostic IA.
   const [aiDiag, setAiDiag] = useState<ObdDiagnosis | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
@@ -540,6 +557,95 @@ export function ObdDiagnostic({
     if (!vin) return;
     await saveVin(vehicleId, vin);
     setStatus("VIN enregistré sur la fiche véhicule ✅");
+  }
+
+  // Extraction automatique de TOUTES les infos standard exposées par le
+  // véhicule et l'adaptateur, sans avoir à connaître les commandes.
+  async function probeAllInfo() {
+    if (!connRef.current) return;
+    setInfoBusy(true);
+    setStatus("Extraction des informations véhicule…");
+    const info: { label: string; value: string }[] = [];
+    const add = (label: string, value: string | null | undefined) => {
+      if (value) info.push({ label, value });
+    };
+
+    // Adaptateur ELM327 (identité + tension).
+    try {
+      add("Adaptateur", (await send("ATI", 4000)).replace(/[\r\n>]/g, " ").trim());
+    } catch {
+      /* non bloquant */
+    }
+    try {
+      add("Protocole", (await send("ATDP", 4000)).replace(/[\r\n>]/g, "").trim());
+    } catch {
+      /* non bloquant */
+    }
+    try {
+      const v = parseAtrvVoltage(await send("ATRV", 4000));
+      if (v != null) add("Tension batterie", `${v.toFixed(1)} V`);
+    } catch {
+      /* non bloquant */
+    }
+
+    // Mode 09 — informations véhicule.
+    try {
+      const v = parseVin(await send("0902", 9000));
+      if (v) {
+        setVin(v);
+        add("VIN (numéro de série)", v);
+      }
+    } catch {
+      /* non bloquant */
+    }
+    try {
+      add("Calculateur (ECU)", parseEcuName(await send("090A", 6000)));
+    } catch {
+      /* non bloquant */
+    }
+    try {
+      add("Calibration ID", parseCalibrationId(await send("0904", 6000)));
+    } catch {
+      /* non bloquant */
+    }
+    try {
+      add("CVN (vérif. calibration)", parseCvn(await send("0906", 6000)));
+    } catch {
+      /* non bloquant */
+    }
+
+    // Nombre de paramètres temps réel disponibles (déjà découverts).
+    if (supportedPids.size > 0) {
+      add(
+        "Paramètres temps réel",
+        `${supportedPids.size} disponible(s)`
+      );
+    }
+
+    setVehicleInfo(info);
+    setInfoBusy(false);
+    setStatus(
+      info.length
+        ? `${info.length} information(s) récupérée(s).`
+        : "Aucune information supplémentaire fournie par ce véhicule."
+    );
+  }
+
+  // Recherche IA de la procédure de réinitialisation d'entretien via le VIN.
+  async function runResetSearch() {
+    const targetVin = vin || vehicleVin;
+    if (!targetVin) return;
+    setResetBusy(true);
+    setResetError(null);
+    try {
+      const res = await resetProcedureFromVin(vehicleId, targetVin);
+      if (res?.error) setResetError(res.error);
+      else setResetProc(res?.procedure ?? null);
+    } catch (e) {
+      setResetError((e as Error).message);
+    } finally {
+      setResetBusy(false);
+    }
   }
 
   // Console avancée : envoie une commande brute (OBD ou AT) et affiche la
@@ -1070,6 +1176,41 @@ export function ObdDiagnostic({
             </p>
           </div>
 
+          {/* Informations véhicule (extraction automatique) */}
+          <div className="card space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Informations véhicule</h3>
+              <button
+                type="button"
+                onClick={probeAllInfo}
+                disabled={infoBusy || busy}
+                className="btn-secondary px-3 py-1 text-sm disabled:opacity-60"
+              >
+                {infoBusy ? "Lecture…" : "Tout récupérer"}
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-400">
+              Interroge automatiquement toutes les informations standard fournies
+              par le véhicule et l&apos;adaptateur (identité, calculateur,
+              calibration…), sans avoir à connaître les commandes.
+            </p>
+            {vehicleInfo.length > 0 && (
+              <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+                {vehicleInfo.map((it, i) => (
+                  <li
+                    key={i}
+                    className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5 text-sm"
+                  >
+                    <span className="text-gray-500">{it.label}</span>
+                    <span className="break-all font-mono text-gray-800">
+                      {it.value}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           {/* VIN */}
           <div className="card space-y-3">
             <div className="flex items-center justify-between">
@@ -1083,17 +1224,136 @@ export function ObdDiagnostic({
                 Lire le VIN
               </button>
             </div>
-            {vin && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-sm">{vin}</span>
-                {canEditVehicle && (
-                  <button
-                    type="button"
-                    onClick={prefillVin}
-                    className="text-sm text-brand-600 hover:underline"
-                  >
-                    Enregistrer sur la fiche
-                  </button>
+            {vin ? (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-sm">{vin}</span>
+                  {(() => {
+                    const stored = vehicleVin?.trim().toUpperCase();
+                    const read = vin.trim().toUpperCase();
+                    if (stored && stored === read) {
+                      return (
+                        <span className="rounded bg-green-100 px-2 py-0.5 text-[11px] text-green-800">
+                          ✓ Identique à la fiche
+                        </span>
+                      );
+                    }
+                    if (stored && stored !== read) {
+                      return (
+                        <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] text-amber-800">
+                          ⚠️ Différent de la fiche ({vehicleVin})
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">
+                        Non renseigné sur la fiche
+                      </span>
+                    );
+                  })()}
+                </div>
+                {canEditVehicle &&
+                  vehicleVin?.trim().toUpperCase() !== vin.trim().toUpperCase() && (
+                    <button
+                      type="button"
+                      onClick={prefillVin}
+                      className="text-sm text-brand-600 hover:underline"
+                    >
+                      {vehicleVin
+                        ? "Mettre à jour le VIN de la fiche"
+                        : "Renseigner le VIN sur la fiche"}
+                    </button>
+                  )}
+              </>
+            ) : (
+              vehicleVin && (
+                <p className="text-sm text-gray-500">
+                  VIN sur la fiche :{" "}
+                  <span className="font-mono">{vehicleVin}</span>
+                </p>
+              )
+            )}
+
+            {/* Procédure de réinitialisation d'entretien (IA + VIN) */}
+            {resetAiEnabled && (vin || vehicleVin) && (
+              <div className="space-y-2 border-t border-gray-100 pt-3">
+                <button
+                  type="button"
+                  onClick={runResetSearch}
+                  disabled={resetBusy}
+                  className="btn-secondary px-3 py-2 text-sm disabled:opacity-60"
+                >
+                  {resetBusy
+                    ? "Recherche en cours…"
+                    : "🔧 Procédure de réinitialisation d'entretien (IA)"}
+                </button>
+                <p className="text-[11px] text-gray-400">
+                  Recherche sur le web, à partir du VIN, comment réinitialiser le
+                  rappel d&apos;entretien / voyant de vidange après un entretien.
+                </p>
+                {resetError && (
+                  <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {resetError}
+                  </p>
+                )}
+                {resetProc && (
+                  <div className="space-y-2 rounded-lg border border-brand-200 bg-brand-50 p-3">
+                    {resetProc.vehicle && (
+                      <p className="text-sm font-medium text-gray-800">
+                        {resetProc.vehicle}
+                      </p>
+                    )}
+                    {resetProc.resets && (
+                      <p className="text-xs text-gray-600">
+                        Réinitialise : {resetProc.resets}
+                      </p>
+                    )}
+                    {resetProc.steps.length > 0 ? (
+                      <ol className="list-decimal space-y-1 pl-5 text-sm text-gray-700">
+                        {resetProc.steps.map((s, i) => (
+                          <li key={i}>{s}</li>
+                        ))}
+                      </ol>
+                    ) : (
+                      !resetProc.found && (
+                        <p className="text-sm text-gray-600">
+                          Aucune procédure fiable trouvée pour ce véhicule.
+                        </p>
+                      )
+                    )}
+                    {resetProc.caution && (
+                      <p className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                        ⚠️ {resetProc.caution}
+                      </p>
+                    )}
+                    {resetProc.sources.length > 0 && (
+                      <div className="text-[11px] text-gray-500">
+                        <p className="font-medium">Sources :</p>
+                        <ul className="list-disc pl-4">
+                          {resetProc.sources.map((src, i) => (
+                            <li key={i}>
+                              {src.url ? (
+                                <a
+                                  href={src.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-brand-600 hover:underline"
+                                >
+                                  {src.title || src.url}
+                                </a>
+                              ) : (
+                                src.title
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    <p className="text-[11px] text-gray-400">
+                      Procédure indicative issue du web — vérifie toujours avec le
+                      carnet d&apos;entretien du constructeur.
+                    </p>
+                  </div>
                 )}
               </div>
             )}

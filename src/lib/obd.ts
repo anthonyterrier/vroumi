@@ -461,6 +461,54 @@ export function parseEcuName(raw: string): string | null {
   return ascii || null;
 }
 
+// Octets de données d'une réponse mode 09 pour un PID donné (après le marqueur
+// « 49 <pid> » et l'éventuel octet de comptage de messages).
+function mode09Data(raw: string, pid: number): number[] | null {
+  if (isNoData(raw)) return null;
+  const bytes = responseBytes(raw);
+  let idx = -1;
+  for (let i = 0; i + 1 < bytes.length; i++) {
+    if (bytes[i] === 0x49 && bytes[i + 1] === pid) {
+      idx = i + 2;
+      break;
+    }
+  }
+  if (idx < 0) return null;
+  let data = bytes.slice(idx);
+  // Octet de comptage de messages (petit nombre, souvent 0x01) en tête.
+  if (data.length && data[0] <= 0x08) data = data.slice(1);
+  return data;
+}
+
+/** Calibration ID (mode 09 PID 04) — chaîne(s) ASCII, séparées si plusieurs. */
+export function parseCalibrationId(raw: string): string | null {
+  const data = mode09Data(raw, 0x04);
+  if (!data) return null;
+  // Les IDs font 16 octets, complétés par des 0x00. On les rend lisibles.
+  const ascii = data
+    .map((b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : b === 0 ? " " : ""))
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+  return ascii || null;
+}
+
+/** CVN — Calibration Verification Numbers (mode 09 PID 06), en hexadécimal. */
+export function parseCvn(raw: string): string | null {
+  const data = mode09Data(raw, 0x06);
+  if (!data) return null;
+  const groups: string[] = [];
+  for (let i = 0; i + 3 < data.length; i += 4) {
+    groups.push(
+      data
+        .slice(i, i + 4)
+        .map((b) => b.toString(16).toUpperCase().padStart(2, "0"))
+        .join("")
+    );
+  }
+  return groups.length ? groups.join(" ") : null;
+}
+
 /**
  * Analyse une réponse de PID « supportés » (0100, 0120, 0140…) : 4 octets de
  * masque de bits. Renvoie l'ensemble des numéros de PID supportés (ex. "0C").
