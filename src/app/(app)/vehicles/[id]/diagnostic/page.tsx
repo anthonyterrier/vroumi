@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ObdDiagnostic } from "@/components/ObdDiagnostic";
 import { DeleteButton } from "@/components/DeleteButton";
 import { deleteDiagnosticReport } from "@/app/(app)/vehicles/[id]/diagnostic-actions";
+import { OBD_AI_ENABLED } from "@/lib/obd-diagnosis";
 import { formatDate, formatUsage } from "@/lib/format";
 
 type StoredCode = { code: string; description: string; pending?: boolean };
@@ -39,6 +40,8 @@ export default async function DiagnosticPage({
         vehicleId={vehicle.id}
         canEditVehicle={perms.vehiclesEdit}
         canJournal={perms.maintenanceAdd}
+        canSaveMileage={perms.mileageAdd}
+        aiEnabled={OBD_AI_ENABLED}
         currentMileage={mileage}
       />
 
