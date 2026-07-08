@@ -392,6 +392,81 @@ export const LIVE_PIDS: LivePid[] = [
     unit: "%",
     parse: (b) => (b.length >= 1 ? Math.round((b[0] * 100) / 255) : null),
   },
+  {
+    key: "stft2",
+    cmd: "0108",
+    label: "Correction court terme (banc 2)",
+    unit: "%",
+    parse: (b) => (b.length >= 1 ? round1((b[0] - 128) * (100 / 128)) : null),
+  },
+  {
+    key: "ltft2",
+    cmd: "0109",
+    label: "Correction long terme (banc 2)",
+    unit: "%",
+    parse: (b) => (b.length >= 1 ? round1((b[0] - 128) * (100 / 128)) : null),
+  },
+  {
+    key: "warmups",
+    cmd: "0130",
+    label: "Démarrages depuis effacement",
+    unit: "",
+    parse: (b) => (b.length >= 1 ? b[0] : null),
+  },
+  {
+    key: "evapPress",
+    cmd: "0132",
+    label: "Pression vapeurs carbu.",
+    unit: "Pa",
+    parse: (b) => {
+      if (b.length < 2) return null;
+      const raw = (b[0] << 8) | b[1];
+      const signed = raw > 32767 ? raw - 65536 : raw;
+      return round1(signed / 4);
+    },
+  },
+  {
+    key: "relThrottle",
+    cmd: "0145",
+    label: "Papillon relatif",
+    unit: "%",
+    parse: (b) => (b.length >= 1 ? Math.round((b[0] * 100) / 255) : null),
+  },
+  {
+    key: "absThrottleB",
+    cmd: "0147",
+    label: "Papillon absolu B",
+    unit: "%",
+    parse: (b) => (b.length >= 1 ? Math.round((b[0] * 100) / 255) : null),
+  },
+  {
+    key: "pedalE",
+    cmd: "014A",
+    label: "Pédale accélérateur E",
+    unit: "%",
+    parse: (b) => (b.length >= 1 ? Math.round((b[0] * 100) / 255) : null),
+  },
+  {
+    key: "commThrottle",
+    cmd: "014C",
+    label: "Papillon commandé",
+    unit: "%",
+    parse: (b) => (b.length >= 1 ? Math.round((b[0] * 100) / 255) : null),
+  },
+  {
+    key: "timeMil",
+    cmd: "014D",
+    label: "Temps voyant allumé",
+    unit: "min",
+    parse: (b) => (b.length >= 2 ? b[0] * 256 + b[1] : null),
+  },
+  {
+    key: "timeCleared",
+    cmd: "014E",
+    label: "Temps depuis effacement",
+    unit: "min",
+    parse: (b) => (b.length >= 2 ? b[0] * 256 + b[1] : null),
+  },
 ];
 
 /** Sous-ensemble de PID lus dans le freeze frame (instantané au défaut). */
