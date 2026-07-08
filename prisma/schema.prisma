@@ -262,6 +262,7 @@ model DiagnosticReport {
   codes       String   @default("[]") // JSON : [{ code, description, pending }]
   voltage     Float? // tension batterie mesurée (ATRV), en volts
   vin         String? // VIN lu sur le port OBD (mode 09)
+  aiDiagnosis String? // analyse IA (JSON ObdDiagnosis) attachée au relevé
   notes       String?
   createdAt   DateTime @default(now())
 

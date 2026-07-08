@@ -16,7 +16,72 @@ export type ObdDiagnosisState =
   | { error?: string; diagnosis?: ObdDiagnosis }
   | undefined;
 
-/** Aide au diagnostic IA à partir de l'instantané OBD (lecture seule). */
+type StoredCode = { code: string; description: string; pending?: boolean };
+
+/** Signature d'un ensemble de codes (indépendante de l'ordre). */
+function codesSignature(codes: { code: string }[]): string {
+  return codes
+    .map((c) => c.code)
+    .sort()
+    .join(",");
+}
+
+/**
+ * Enregistre le diagnostic IA dans l'historique. Si le dernier relevé porte
+ * exactement les mêmes codes que l'instantané, on l'enrichit ; sinon on crée
+ * un nouveau relevé. Silencieux si l'utilisateur n'a pas le droit d'écrire.
+ */
+async function persistDiagnosis(
+  userId: string,
+  vehicleId: string,
+  snapshot: ObdSnapshot,
+  mileage: number | null,
+  diagnosis: ObdDiagnosis
+): Promise<void> {
+  if (!(await getVehiclePerms(userId, vehicleId)).maintenanceAdd) return;
+
+  const aiDiagnosis = JSON.stringify(diagnosis);
+  const snapSig = codesSignature(snapshot.codes);
+
+  const latest = await prisma.diagnosticReport.findFirst({
+    where: { vehicleId },
+    orderBy: { performedAt: "desc" },
+  });
+
+  let latestSig: string | null = null;
+  if (latest) {
+    try {
+      latestSig = codesSignature(JSON.parse(latest.codes) as StoredCode[]);
+    } catch {
+      latestSig = null;
+    }
+  }
+
+  if (latest && latestSig === snapSig) {
+    await prisma.diagnosticReport.update({
+      where: { id: latest.id },
+      data: { aiDiagnosis },
+    });
+  } else {
+    const storedCodes: StoredCode[] = snapshot.codes.map((c) => ({
+      code: c.code,
+      description: c.description,
+      pending: c.pending,
+    }));
+    await prisma.diagnosticReport.create({
+      data: {
+        vehicleId,
+        codes: JSON.stringify(storedCodes),
+        voltage: snapshot.voltage,
+        mileage,
+        aiDiagnosis,
+      },
+    });
+  }
+  revalidatePath(`/vehicles/${vehicleId}/diagnostic`);
+}
+
+/** Aide au diagnostic IA à partir de l'instantané OBD ; l'enregistre au relevé. */
 export async function diagnoseWithAI(
   vehicleId: string,
   snapshot: ObdSnapshot
@@ -41,6 +106,15 @@ export async function diagnoseWithAI(
       },
       snapshot
     );
+    // On conserve le diagnostic avec le relevé, seulement s'il y a des codes.
+    if (snapshot.codes.length > 0) {
+      try {
+        await persistDiagnosis(user.id, vehicle.id, snapshot, mileage, diagnosis);
+      } catch (e) {
+        // L'enregistrement ne doit jamais faire échouer l'affichage du diagnostic.
+        console.error("Enregistrement du diagnostic IA échoué:", e);
+      }
+    }
     return { diagnosis };
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);

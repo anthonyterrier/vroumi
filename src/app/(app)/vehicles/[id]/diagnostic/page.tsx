@@ -5,9 +5,21 @@ import { ObdDiagnostic } from "@/components/ObdDiagnostic";
 import { DeleteButton } from "@/components/DeleteButton";
 import { deleteDiagnosticReport } from "@/app/(app)/vehicles/[id]/diagnostic-actions";
 import { OBD_AI_ENABLED } from "@/lib/obd-diagnosis";
+import {
+  ObdDiagnosisSchema,
+  SEVERITY_STYLE,
+  LIKELIHOOD_STYLE,
+  type ObdDiagnosis,
+} from "@/lib/obd-diagnosis-fields";
 import { formatDate, formatUsage } from "@/lib/format";
 
 type StoredCode = { code: string; description: string; pending?: boolean };
+
+const SEVERITY_LABEL: Record<string, string> = {
+  info: "Info",
+  attention: "Attention",
+  urgent: "Urgent",
+};
 
 export default async function DiagnosticPage({
   params,
@@ -35,7 +47,16 @@ export default async function DiagnosticPage({
     } catch {
       codes = [];
     }
-    return { r, codes, set: new Set(codes.map((c) => c.code)) };
+    let ai: ObdDiagnosis | null = null;
+    if (r.aiDiagnosis) {
+      try {
+        const parsed = ObdDiagnosisSchema.safeParse(JSON.parse(r.aiDiagnosis));
+        if (parsed.success) ai = parsed.data;
+      } catch {
+        ai = null;
+      }
+    }
+    return { r, codes, ai, set: new Set(codes.map((c) => c.code)) };
   });
   // Codes du dernier relevé (pour le diff « en direct » côté OBD).
   const lastReportCodes = history[0] ? history[0].codes.map((c) => c.code) : [];
@@ -71,7 +92,7 @@ export default async function DiagnosticPage({
             chaque lecture quand les codes changent (apparus / disparus).
           </p>
           {history.map((entry, i) => {
-            const { r, codes } = entry;
+            const { r, codes, ai } = entry;
             // Relevé précédent (plus ancien) = élément suivant dans la liste desc.
             const prev = history[i + 1];
             const appeared = prev
@@ -141,6 +162,55 @@ export default async function DiagnosticPage({
                 )}
                 {r.vin && (
                   <p className="font-mono text-xs text-gray-500">VIN : {r.vin}</p>
+                )}
+
+                {ai && (
+                  <details className="mt-1 rounded-md border border-gray-200 bg-gray-50 p-2">
+                    <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+                      <span
+                        className={`rounded border px-1.5 py-0.5 text-[11px] font-semibold ${
+                          SEVERITY_STYLE[ai.severity] ?? SEVERITY_STYLE.info
+                        }`}
+                      >
+                        {SEVERITY_LABEL[ai.severity] ?? ai.severity}
+                      </span>
+                      <span>🔧 Diagnostic IA</span>
+                    </summary>
+                    <div className="mt-2 space-y-2">
+                      {ai.summary && (
+                        <p className="text-sm text-gray-700">{ai.summary}</p>
+                      )}
+                      {ai.causes.length > 0 && (
+                        <div className="space-y-1.5">
+                          {ai.causes.map((cause, ci) => (
+                            <div key={ci} className="text-sm">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`rounded px-1.5 py-0.5 text-[11px] ${
+                                    LIKELIHOOD_STYLE[cause.likelihood] ??
+                                    LIKELIHOOD_STYLE.moyenne
+                                  }`}
+                                >
+                                  {cause.likelihood}
+                                </span>
+                                <span className="font-medium">{cause.title}</span>
+                              </div>
+                              {cause.checks.length > 0 && (
+                                <ul className="ml-4 list-disc text-xs text-gray-600">
+                                  {cause.checks.map((chk, chi) => (
+                                    <li key={chi}>{chk}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {ai.advice && (
+                        <p className="text-xs text-gray-500">{ai.advice}</p>
+                      )}
+                    </div>
+                  </details>
                 )}
               </div>
             );
