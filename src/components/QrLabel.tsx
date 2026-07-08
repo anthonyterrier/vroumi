@@ -50,6 +50,9 @@ type NiimbotModule = {
   };
 };
 
+// Instance connectée du client Niimbot (conservée entre deux impressions).
+type NiimbotClient = InstanceType<NiimbotModule["NiimbotBluetoothClient"]>;
+
 // Interface minimale de navigator.bluetooth (types Web Bluetooth absents de TS).
 type BluetoothLike = {
   requestDevice: (opts?: unknown) => Promise<{ id: string }>;
@@ -163,6 +166,11 @@ export function QrLabel({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<string | null>(null);
+  // Imprimante conservée connectée entre deux impressions : le sélecteur
+  // Bluetooth n'apparaît qu'à la première connexion.
+  const clientRef = useRef<NiimbotClient | null>(null);
+  const moduleRef = useRef<NiimbotModule | null>(null);
+  const [printerConnected, setPrinterConnected] = useState(false);
 
   // Construit l'étiquette (QR + nom + plaque) sur un canvas hors-écran.
   // Étiquette ~50×30 mm à 300 dpi (la M2 est en 300 dpi, pas 203) : on calcule
@@ -255,15 +263,22 @@ export function QrLabel({
     };
   }, [buildLabelCanvas]);
 
-  async function printNiimbot() {
-    if (!("bluetooth" in navigator) || !window.isSecureContext) {
-      setStatus(
-        "Web Bluetooth indisponible : utilise Chrome/Chromium (PC, Android) ou Bluefy (iOS), et accède au site en HTTPS."
-      );
-      return;
+  // Ferme la connexion imprimante et oublie le client (sans oublier l'appareil
+  // mémorisé). Prochaine impression → reconnexion.
+  function disconnectPrinter() {
+    try {
+      clientRef.current?.disconnect();
+    } catch {
+      // ignore
     }
-    setStatus("Connexion à l'imprimante…");
+    clientRef.current = null;
+    moduleRef.current = null;
+    setPrinterConnected(false);
+  }
 
+  // Connecte l'imprimante (sélecteur Bluetooth affiché ici uniquement) et
+  // conserve le client pour les impressions suivantes.
+  async function connectPrinter(): Promise<NiimbotClient> {
     const bt = (navigator as unknown as { bluetooth: BluetoothLike }).bluetooth;
     const origRequestDevice = bt.requestDevice.bind(bt);
     // On surcharge requestDevice le temps du connect() : les filtres de
@@ -297,42 +312,71 @@ export function QrLabel({
         "@mmote/niimbluelib"
       )) as unknown as NiimbotModule;
       const client = new niimbot.NiimbotBluetoothClient();
+      await client.connect();
+      clientRef.current = client;
+      moduleRef.current = niimbot;
+      setPrinterConnected(true);
+      return client;
+    } finally {
+      bt.requestDevice = origRequestDevice; // toujours restaurer
+    }
+  }
+
+  async function doPrint(client: NiimbotClient, niimbot: NiimbotModule) {
+    // Sens et largeur de tête lus sur le modèle réellement connecté.
+    const meta = client.getModelMetadata();
+    const dir: PrintDirection = meta?.printDirection ?? "top";
+    const headPixels = meta?.printheadPixels;
+
+    const built = await buildLabelCanvas();
+    if (!built) throw new Error("Impossible de générer l'étiquette.");
+    const printCanvas = clampToHead(built, dir, headPixels);
+    const encoded = niimbot.ImageEncoder.encodeCanvas(printCanvas, dir);
+    const taskName = client.getPrintTaskType() ?? "B1";
+
+    const task = client.abstraction.newPrintTask(taskName, {
+      totalPages: 1,
+      statusPollIntervalMs: 100,
+      statusTimeoutMs: 8000,
+    });
+    setStatus("Impression…");
+    await task.printInit();
+    await task.printPage(encoded, 1);
+    await task.waitForPageFinished();
+    await task.waitForFinished();
+    await task.printEnd();
+  }
+
+  async function printNiimbot() {
+    if (!("bluetooth" in navigator) || !window.isSecureContext) {
+      setStatus(
+        "Web Bluetooth indisponible : utilise Chrome/Chromium (PC, Android) ou Bluefy (iOS), et accède au site en HTTPS."
+      );
+      return;
+    }
+    try {
+      // Réutilise la connexion existante ; ne connecte (et n'affiche le
+      // sélecteur) que si l'imprimante n'est pas déjà connectée.
+      let client = clientRef.current;
+      let niimbot = moduleRef.current;
+      if (!client || !niimbot) {
+        setStatus("Connexion à l'imprimante…");
+        client = await connectPrinter();
+        niimbot = moduleRef.current!;
+      }
       try {
-        await client.connect();
-      } finally {
-        bt.requestDevice = origRequestDevice; // toujours restaurer
+        await doPrint(client, niimbot);
+      } catch {
+        // La connexion a pu se rompre (imprimante en veille) : on reconnecte
+        // une fois et on réessaie.
+        disconnectPrinter();
+        setStatus("Reconnexion à l'imprimante…");
+        client = await connectPrinter();
+        await doPrint(client, moduleRef.current!);
       }
-
-      // Sens et largeur de tête lus sur le modèle réellement connecté.
-      const meta = client.getModelMetadata();
-      const dir: PrintDirection = meta?.printDirection ?? "top";
-      const headPixels = meta?.printheadPixels;
-
-      const built = await buildLabelCanvas();
-      if (!built) {
-        setStatus("Impossible de générer l'étiquette.");
-        client.disconnect();
-        return;
-      }
-      const printCanvas = clampToHead(built, dir, headPixels);
-      const encoded = niimbot.ImageEncoder.encodeCanvas(printCanvas, dir);
-      const taskName = client.getPrintTaskType() ?? "B1";
-
-      const task = client.abstraction.newPrintTask(taskName, {
-        totalPages: 1,
-        statusPollIntervalMs: 100,
-        statusTimeoutMs: 8000,
-      });
-      setStatus("Impression…");
-      await task.printInit();
-      await task.printPage(encoded, 1);
-      await task.waitForPageFinished();
-      await task.waitForFinished();
-      await task.printEnd();
-      client.disconnect();
       setStatus("Étiquette imprimée ✅");
     } catch (e) {
-      bt.requestDevice = origRequestDevice; // sécurité si erreur avant le finally
+      disconnectPrinter();
       setStatus("Erreur d'impression : " + (e as Error).message);
     }
   }
@@ -406,6 +450,15 @@ export function QrLabel({
           >
             Télécharger l&apos;image (PNG)
           </button>
+          {printerConnected && (
+            <button
+              type="button"
+              onClick={disconnectPrinter}
+              className="text-xs text-gray-500 hover:text-gray-800"
+            >
+              Imprimante connectée ✓ · déconnecter
+            </button>
+          )}
         </div>
       </div>
 
