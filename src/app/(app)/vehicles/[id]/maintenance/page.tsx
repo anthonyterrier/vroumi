@@ -184,13 +184,32 @@ export default async function MaintenancePage({
               title="Modifier l'entretien"
               triggerClassName="px-2 text-gray-400 hover:text-brand-600"
             >
-              <form
-                action={updateMaintenance.bind(null, vehicle.id, m.id)}
-                className="space-y-3"
-              >
-                <MaintenanceFields services={services} m={m} unit={vehicle.usageUnit} />
-                <SubmitButton className="btn-primary w-full">Enregistrer</SubmitButton>
-              </form>
+              <div className="space-y-4">
+                <form
+                  action={updateMaintenance.bind(null, vehicle.id, m.id)}
+                  className="space-y-3"
+                >
+                  <MaintenanceFields
+                    services={services}
+                    m={m}
+                    unit={vehicle.usageUnit}
+                  />
+                  <SubmitButton className="btn-primary w-full">
+                    Enregistrer
+                  </SubmitButton>
+                </form>
+                {/* Pièces jointes : hors du <form> (elles ont leurs propres
+                    formulaires d'ajout/suppression). */}
+                <div className="border-t border-gray-100 pt-3">
+                  <p className="label">Factures / photos</p>
+                  <MaintenanceAttachments
+                    vehicleId={vehicle.id}
+                    maintenanceId={m.id}
+                    attachments={m.attachments}
+                    canEdit={canEdit}
+                  />
+                </div>
+              </div>
             </Modal>
             <form action={deleteMaintenance.bind(null, vehicle.id, m.id)}>
               <DeleteButton confirmMessage="Supprimer cet entretien ?" />
