@@ -269,7 +269,14 @@ export function ObdDiagnostic({
       await discoverSupportedPids();
 
       setConnected(true);
-      setStatus("Connecté ✅ — prêt pour le diagnostic.");
+      setStatus("Connecté ✅ — lecture automatique en cours…");
+
+      // À la connexion, on enchaîne automatiquement : VIN, codes défaut, puis
+      // démarrage des données temps réel. (Ces fonctions gèrent leurs propres
+      // erreurs et ne relancent pas d'exception.)
+      await readVin();
+      await readCodes();
+      startLive();
     } catch (e) {
       setStatus("Connexion impossible : " + (e as Error).message);
     } finally {
