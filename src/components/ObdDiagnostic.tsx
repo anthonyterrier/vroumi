@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import {
   LIVE_PIDS,
+  FREEZE_PID_KEYS,
   parseDtcCodes,
   parseLivePid,
   parseVin,
@@ -10,6 +11,9 @@ import {
   parseSupportedPids,
   parseMonitorStatus,
   parseFreezeFrameDtc,
+  parseEcuName,
+  freezeCommand,
+  parseFreezePid,
   pidNumber,
   type MonitorStatus,
 } from "@/lib/obd";
@@ -92,14 +96,22 @@ export function ObdDiagnostic({
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [protocol, setProtocol] = useState<string | null>(null);
+  const [ecuName, setEcuName] = useState<string | null>(null);
   const [codes, setCodes] = useState<DiagnosticCode[]>([]);
   const [freezeDtc, setFreezeDtc] = useState<string | null>(null);
+  const [freezeData, setFreezeData] = useState<Record<string, number | null>>(
+    {}
+  );
   const [monitors, setMonitors] = useState<MonitorStatus | null>(null);
   const [readDone, setReadDone] = useState(false);
   const [vin, setVin] = useState<string | null>(null);
   const [voltage, setVoltage] = useState<number | null>(null);
   const [live, setLive] = useState<Record<string, number | null>>({});
+  const [supportedPids, setSupportedPids] = useState<Set<string>>(new Set());
   const [liveOn, setLiveOn] = useState(false);
+  // Console de commandes brute (mode avancé).
+  const [rawCmd, setRawCmd] = useState("");
+  const [rawLog, setRawLog] = useState<{ cmd: string; res: string }[]>([]);
   const [mileage, setMileage] = useState<string>(
     currentMileage != null ? String(currentMileage) : ""
   );
@@ -265,6 +277,12 @@ export function ObdDiagnostic({
       } catch {
         // non bloquant
       }
+      // Nom du calculateur (mode 09 PID 0A), si fourni.
+      try {
+        setEcuName(parseEcuName(await send("090A", 5000)));
+      } catch {
+        setEcuName(null);
+      }
       // Découvre les PID mode 01 supportés (pour n'interroger que l'utile).
       await discoverSupportedPids();
 
@@ -299,17 +317,23 @@ export function ObdDiagnostic({
   // --- Découverte des PID supportés --------------------------------------
   async function discoverSupportedPids() {
     const supported = new Set<string>();
-    for (const base of ["0100", "0120", "0140", "0160"]) {
+    // Plages de PID mode 01. Le dernier PID de chaque plage (0x20, 0x40…)
+    // indique si la plage SUIVANTE est supportée → on ne l'interroge qu'alors
+    // (rapide sur les vieux véhicules, et va jusqu'à A6 = odomètre sur les
+    // récents).
+    const ranges = ["0100", "0120", "0140", "0160", "0180", "01A0"];
+    const nextBit = ["20", "40", "60", "80", "A0"];
+    for (let i = 0; i < ranges.length; i++) {
       try {
-        const s = parseSupportedPids(await send(base, 4000), base);
+        const s = parseSupportedPids(await send(ranges[i], 4000), ranges[i]);
         s.forEach((p) => supported.add(p));
-        // Le bit du dernier PID de la plage indique la présence de la suivante ;
-        // en pratique on interroge les 4 premières plages, suffisant ici.
       } catch {
         break;
       }
+      if (i < nextBit.length && !supported.has(nextBit[i])) break;
     }
     supportedRef.current = supported.size > 0 ? supported : null;
+    setSupportedPids(supported);
   }
 
   // --- Actions de diagnostic ---------------------------------------------
@@ -356,11 +380,29 @@ export function ObdDiagnostic({
       }
       setCodes(list);
 
-      // Freeze frame (DTC déclencheur) et état des contrôles de préparation.
+      // Freeze frame : DTC déclencheur + instantané des capteurs au défaut.
+      let hasFreeze = false;
       try {
-        setFreezeDtc(parseFreezeFrameDtc(await send("0202", 8000)));
+        const fdtc = parseFreezeFrameDtc(await send("0202", 8000));
+        setFreezeDtc(fdtc);
+        hasFreeze = !!fdtc;
       } catch {
         setFreezeDtc(null);
+      }
+      if (hasFreeze) {
+        const fd: Record<string, number | null> = {};
+        for (const key of FREEZE_PID_KEYS) {
+          const pid = LIVE_PIDS.find((p) => p.key === key);
+          if (!pid) continue;
+          try {
+            fd[key] = parseFreezePid(pid, await send(freezeCommand(pid), 4000));
+          } catch {
+            fd[key] = null;
+          }
+        }
+        setFreezeData(fd);
+      } else {
+        setFreezeData({});
       }
       try {
         setMonitors(parseMonitorStatus(await send("0101", 6000)));
@@ -436,6 +478,21 @@ export function ObdDiagnostic({
     if (!vin) return;
     await saveVin(vehicleId, vin);
     setStatus("VIN enregistré sur la fiche véhicule ✅");
+  }
+
+  // Console avancée : envoie une commande brute (OBD ou AT) et affiche la
+  // réponse. Permet d'explorer, y compris le spécifique constructeur (mode 22).
+  async function sendRaw() {
+    const cmd = rawCmd.trim().toUpperCase();
+    if (!cmd || !connRef.current) return;
+    let res: string;
+    try {
+      res =
+        (await send(cmd, 9000)).replace(/[\r\n>]+/g, " ").trim() || "(réponse vide)";
+    } catch (e) {
+      res = "Erreur : " + (e as Error).message;
+    }
+    setRawLog((l) => [{ cmd, res }, ...l].slice(0, 25));
   }
 
   function stopLive() {
@@ -537,6 +594,11 @@ export function ObdDiagnostic({
               Protocole : {protocol}
             </span>
           )}
+          {connected && ecuName && (
+            <span className="rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">
+              Calculateur : {ecuName}
+            </span>
+          )}
         </div>
         {status && <p className="text-sm text-gray-600">{status}</p>}
         <p className="text-[11px] text-gray-400">
@@ -621,6 +683,32 @@ export function ObdDiagnostic({
               </div>
             )}
 
+            {Object.keys(freezeData).length > 0 && (
+              <div className="rounded-lg border border-gray-200 p-2 text-sm">
+                <p className="mb-1 text-xs font-medium text-gray-600">
+                  Freeze frame — état des capteurs au moment du défaut
+                </p>
+                <ul className="grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2">
+                  {FREEZE_PID_KEYS.map((key) => {
+                    const pid = LIVE_PIDS.find((p) => p.key === key);
+                    const v = freezeData[key];
+                    if (!pid || v == null) return null;
+                    return (
+                      <li
+                        key={key}
+                        className="flex items-center justify-between text-xs"
+                      >
+                        <span className="text-gray-600">{pid.label}</span>
+                        <span className="font-medium text-gray-800">
+                          {v} {pid.unit}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
             {readDone && codes.length === 0 && (
               <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
                 Aucun code défaut. 🎉
@@ -698,7 +786,10 @@ export function ObdDiagnostic({
               )}
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {LIVE_PIDS.map((pid) => {
+              {(supportedPids.size
+                ? LIVE_PIDS.filter((p) => supportedPids.has(pidNumber(p.cmd)))
+                : LIVE_PIDS
+              ).map((pid) => {
                 const v = live[pid.key];
                 return (
                   <div
@@ -716,6 +807,10 @@ export function ObdDiagnostic({
                 );
               })}
             </div>
+            <p className="text-[11px] text-gray-400">
+              Seules les données supportées par ce véhicule sont affichées
+              ({supportedPids.size} paramètre(s) détecté(s)).
+            </p>
           </div>
 
           {/* VIN */}
@@ -746,6 +841,53 @@ export function ObdDiagnostic({
               </div>
             )}
           </div>
+
+          {/* Console avancée */}
+          <details className="card">
+            <summary className="cursor-pointer font-semibold">
+              Console avancée (commandes brutes)
+            </summary>
+            <p className="mt-2 text-xs text-gray-500">
+              Envoie une commande OBD (ex. <code>0105</code>, <code>03</code>) ou
+              ELM327 (ex. <code>ATRV</code>, <code>ATDP</code>), ou du spécifique
+              constructeur (ex. <code>22F190</code> lecture par identifiant). La
+              réponse brute s&apos;affiche telle quelle.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <input
+                value={rawCmd}
+                onChange={(e) => setRawCmd(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") sendRaw();
+                }}
+                placeholder="ex. 0105 ou ATRV"
+                className="input font-mono text-sm"
+              />
+              <button
+                type="button"
+                onClick={sendRaw}
+                disabled={busy}
+                className="btn-secondary shrink-0 disabled:opacity-60"
+              >
+                Envoyer
+              </button>
+            </div>
+            {rawLog.length > 0 && (
+              <div className="mt-2 max-h-52 space-y-1 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2 font-mono text-xs">
+                {rawLog.map((entry, i) => (
+                  <div key={i}>
+                    <span className="text-brand-700">&gt; {entry.cmd}</span>
+                    <span className="ml-2 text-gray-700">{entry.res}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="mt-2 text-[11px] text-gray-400">
+              Mode avancé : certaines commandes constructeur sont propres à la
+              marque et peuvent ne rien renvoyer (ou nécessiter une adresse ECU
+              précise). Sans danger en lecture ; évite les commandes d&apos;écriture.
+            </p>
+          </details>
         </>
       )}
 
