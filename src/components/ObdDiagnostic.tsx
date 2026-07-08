@@ -310,9 +310,23 @@ export function ObdDiagnostic({
     setBusy(true);
     setStatus("Lecture des codes défaut…");
     try {
-      const stored = parseDtcCodes(await send("03", 9000), "03");
-      const pending = parseDtcCodes(await send("07", 9000), "07");
-      const permanent = parseDtcCodes(await send("0A", 9000), "0A");
+      // Chaque mode est lu de façon TOLÉRANTE : sur K-line (ISO 9141-2) certains
+      // ECU ne répondent pas aux modes 07 (en attente) / 0A (permanents) → un
+      // timeout renvoie null et n'interrompt pas la lecture des codes stockés.
+      const readMode = async (
+        cmd: string,
+        mode: "03" | "07" | "0A"
+      ): Promise<string[] | null> => {
+        try {
+          return parseDtcCodes(await send(cmd, 8000), mode);
+        } catch {
+          return null;
+        }
+      };
+      const storedRes = await readMode("03", "03");
+      const pending = (await readMode("07", "07")) ?? [];
+      const permanent = (await readMode("0A", "0A")) ?? [];
+      const stored = storedRes ?? [];
       const seen = new Set<string>();
       const list: DiagnosticCode[] = [];
       for (const code of stored) {
@@ -352,11 +366,18 @@ export function ObdDiagnostic({
         // non bloquant
       }
       setReadDone(true);
-      setStatus(
-        list.length
-          ? `${list.length} code(s) défaut détecté(s).`
-          : "Aucun code défaut détecté 🎉"
-      );
+      if (storedRes === null) {
+        // Le mode 03 (codes stockés) lui-même n'a pas répondu.
+        setStatus(
+          "Le véhicule n'a pas répondu à la demande de codes (mode 03). Réessaie, contact mis, moteur tournant."
+        );
+      } else {
+        setStatus(
+          list.length
+            ? `${list.length} code(s) défaut détecté(s).`
+            : "Aucun code défaut détecté 🎉"
+        );
+      }
     } catch (e) {
       setStatus("Erreur de lecture : " + (e as Error).message);
     } finally {
