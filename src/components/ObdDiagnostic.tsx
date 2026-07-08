@@ -29,7 +29,8 @@ import {
   diagnoseWithAI,
   saveOdometer,
   resetProcedureFromVin,
-  ensureVehicleKnowledge,
+  startVehicleKnowledgeResearch,
+  getVehicleKnowledge,
 } from "@/app/(app)/vehicles/[id]/diagnosis-ai-actions";
 import {
   SEVERITY_STYLE,
@@ -172,6 +173,8 @@ export function ObdDiagnostic({
   // Réponses des commandes spécifiques testées (clé = commande).
   const [cmdResults, setCmdResults] = useState<Record<string, string>>({});
   const knowFetchedRef = useRef(false);
+  // Stoppe le sondage de la base de connaissances si le composant est démonté.
+  const knowledgeAliveRef = useRef(true);
   // Aide au diagnostic IA.
   const [aiDiag, setAiDiag] = useState<ObdDiagnosis | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
@@ -188,6 +191,14 @@ export function ObdDiagnostic({
   const lastSavedRef = useRef<string | null>(null);
   // PID mode 01 supportés par le véhicule (null = pas encore découverts).
   const supportedRef = useRef<Set<string> | null>(null);
+
+  // Arrête tout sondage en cours au démontage du composant.
+  useEffect(() => {
+    knowledgeAliveRef.current = true;
+    return () => {
+      knowledgeAliveRef.current = false;
+    };
+  }, []);
 
   // --- Transport BLE ------------------------------------------------------
   function onNotify(e: Event) {
@@ -745,25 +756,71 @@ export function ObdDiagnostic({
     }
   }
 
-  // Charge (ou construit) la base de connaissances du modèle. `force` relance
-  // une recherche IA même si un cache existe.
+  const fmtDate = (iso?: string) =>
+    iso ? new Date(iso).toLocaleDateString("fr-FR") : null;
+
+  // Charge (ou construit) la base de connaissances du modèle. La recherche IA
+  // tourne en tâche de fond côté serveur ; on lance puis on sonde le résultat
+  // (évite les longues requêtes synchrones → « Failed to fetch »). `force`
+  // relance une recherche même si un cache existe.
   async function loadKnowledge(force = false) {
     setKnowBusy(true);
     setKnowError(null);
     try {
-      const res = await ensureVehicleKnowledge(vehicleId, force);
-      if (res?.error) setKnowError(res.error);
-      else {
-        setKnowledge(res?.knowledge ?? null);
-        setKnowUpdatedAt(
-          res?.updatedAt ? new Date(res.updatedAt).toLocaleDateString("fr-FR") : null
-        );
+      const res = await startVehicleKnowledgeResearch(vehicleId, force);
+      if (!res) {
+        setKnowError("Réponse vide du serveur.");
+        return;
       }
+      if (res.status === "ready" && res.knowledge) {
+        setKnowledge(res.knowledge);
+        setKnowUpdatedAt(fmtDate(res.updatedAt));
+        return;
+      }
+      if (res.status === "none" || res.status === "unavailable") {
+        if (res.error) setKnowError(res.error);
+        return;
+      }
+      if (res.status === "error") {
+        setKnowError(res.error ?? "La recherche a échoué.");
+        return;
+      }
+      // status "pending" → recherche lancée en tâche de fond : on sonde.
+      await pollKnowledge();
     } catch (e) {
       setKnowError((e as Error).message);
     } finally {
       setKnowBusy(false);
     }
+  }
+
+  // Sonde le résultat de la recherche IA (max ~3 min).
+  async function pollKnowledge() {
+    const maxTries = 45; // ~3 min à 4 s
+    for (let i = 0; i < maxTries; i++) {
+      await new Promise((r) => setTimeout(r, 4000));
+      if (!knowledgeAliveRef.current) return;
+      let res;
+      try {
+        res = await getVehicleKnowledge(vehicleId);
+      } catch {
+        continue; // aléa réseau : on retente
+      }
+      if (!res) continue;
+      if (res.status === "ready" && res.knowledge) {
+        setKnowledge(res.knowledge);
+        setKnowUpdatedAt(fmtDate(res.updatedAt));
+        return;
+      }
+      if (res.status === "error") {
+        setKnowError(res.error ?? "La recherche a échoué.");
+        return;
+      }
+      // "pending" / "none" → on continue à sonder.
+    }
+    setKnowError(
+      "La recherche prend plus de temps que prévu. Réessaie dans un moment avec « Mettre à jour »."
+    );
   }
 
   // Exécute une commande spécifique de la base (ex. lecture kilométrage VW).
@@ -1016,6 +1073,12 @@ export function ObdDiagnostic({
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
               Renseigne la marque, le modèle et l&apos;année du véhicule pour
               construire sa base de connaissances.
+            </p>
+          )}
+          {knowBusy && (
+            <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">
+              Recherche IA en cours… ça peut prendre 1 à 2 minutes (tu peux
+              continuer à utiliser le diagnostic pendant ce temps).
             </p>
           )}
           {knowError && (
