@@ -98,6 +98,8 @@ export function ObdDiagnostic({
   canSaveMileage,
   aiEnabled,
   currentMileage,
+  lastReportCodes,
+  lastReportDate,
 }: {
   vehicleId: string;
   canEditVehicle: boolean;
@@ -105,6 +107,8 @@ export function ObdDiagnostic({
   canSaveMileage: boolean;
   aiEnabled: boolean;
   currentMileage: number | null;
+  lastReportCodes: string[];
+  lastReportDate: string | null;
 }) {
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -781,6 +785,49 @@ export function ObdDiagnostic({
                 </ul>
               </div>
             )}
+
+            {readDone &&
+              lastReportDate &&
+              (() => {
+                const currentSet = new Set(codes.map((c) => c.code));
+                const newCodes = codes
+                  .map((c) => c.code)
+                  .filter((c) => !lastReportCodes.includes(c));
+                const resolved = lastReportCodes.filter(
+                  (c) => !currentSet.has(c)
+                );
+                if (newCodes.length === 0 && resolved.length === 0) {
+                  return (
+                    <p className="text-xs text-gray-500">
+                      Aucun changement depuis le dernier relevé ({lastReportDate}
+                      ).
+                    </p>
+                  );
+                }
+                return (
+                  <div className="flex flex-wrap items-center gap-1">
+                    {newCodes.map((c) => (
+                      <span
+                        key={`n-${c}`}
+                        className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] text-red-800"
+                      >
+                        ▲ {c} nouveau
+                      </span>
+                    ))}
+                    {resolved.map((c) => (
+                      <span
+                        key={`s-${c}`}
+                        className="rounded bg-green-100 px-1.5 py-0.5 text-[11px] text-green-800"
+                      >
+                        ▼ {c} résolu
+                      </span>
+                    ))}
+                    <span className="text-[11px] text-gray-400">
+                      depuis le {lastReportDate}
+                    </span>
+                  </div>
+                );
+              })()}
 
             {readDone && codes.length === 0 && (
               <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">

@@ -26,6 +26,21 @@ export default async function DiagnosticPage({
     currentMileage(vehicle.id, vehicle.initialMileage),
   ]);
 
+  // Historique : on parse les codes de chaque relevé (ordre du plus récent au
+  // plus ancien) pour pouvoir calculer les codes apparus / disparus.
+  const history = reports.map((r) => {
+    let codes: StoredCode[] = [];
+    try {
+      codes = JSON.parse(r.codes) as StoredCode[];
+    } catch {
+      codes = [];
+    }
+    return { r, codes, set: new Set(codes.map((c) => c.code)) };
+  });
+  // Codes du dernier relevé (pour le diff « en direct » côté OBD).
+  const lastReportCodes = history[0] ? history[0].codes.map((c) => c.code) : [];
+  const lastReportDate = history[0] ? formatDate(history[0].r.performedAt) : null;
+
   return (
     <div className="space-y-5">
       <div>
@@ -43,18 +58,27 @@ export default async function DiagnosticPage({
         canSaveMileage={perms.mileageAdd}
         aiEnabled={OBD_AI_ENABLED}
         currentMileage={mileage}
+        lastReportCodes={lastReportCodes}
+        lastReportDate={lastReportDate}
       />
 
-      {reports.length > 0 && (
+      {history.length > 0 && (
         <div className="space-y-2">
           <h3 className="font-semibold">Historique des diagnostics</h3>
-          {reports.map((r) => {
-            let codes: StoredCode[] = [];
-            try {
-              codes = JSON.parse(r.codes) as StoredCode[];
-            } catch {
-              codes = [];
-            }
+          <p className="text-xs text-gray-400">
+            La voiture ne conserve pas d&apos;historique daté ; il est reconstruit
+            en comparant vos relevés successifs (codes apparus / disparus).
+          </p>
+          {history.map((entry, i) => {
+            const { r, codes } = entry;
+            // Relevé précédent (plus ancien) = élément suivant dans la liste desc.
+            const prev = history[i + 1];
+            const appeared = prev
+              ? codes.filter((c) => !prev.set.has(c.code))
+              : [];
+            const resolved = prev
+              ? prev.codes.filter((c) => !entry.set.has(c.code))
+              : [];
             return (
               <div key={r.id} className="card space-y-1">
                 <div className="flex items-center justify-between">
@@ -72,6 +96,30 @@ export default async function DiagnosticPage({
                     </form>
                   )}
                 </div>
+
+                {prev && (appeared.length > 0 || resolved.length > 0) && (
+                  <div className="flex flex-wrap gap-1">
+                    {appeared.map((c) => (
+                      <span
+                        key={`a-${c.code}`}
+                        className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] text-red-800"
+                        title={c.description}
+                      >
+                        ▲ {c.code} apparu
+                      </span>
+                    ))}
+                    {resolved.map((c) => (
+                      <span
+                        key={`r-${c.code}`}
+                        className="rounded bg-green-100 px-1.5 py-0.5 text-[11px] text-green-800"
+                        title={c.description}
+                      >
+                        ▼ {c.code} disparu
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 {codes.length === 0 ? (
                   <p className="text-sm text-green-700">Aucun code défaut.</p>
                 ) : (
