@@ -269,6 +269,22 @@ model DiagnosticReport {
   @@index([vehicleId, performedAt])
 }
 
+// Base de connaissances véhicule construite par l'IA (recherche web) et mise en
+// cache GLOBAL par modèle (clé « marque|modèle|année »). Enrichie au fur et à
+// mesure des connexions et réutilisée pour les diagnostics. Le contenu (JSON)
+// suit VehicleKnowledgeSchema : synthèse, pannes courantes, commandes OBD
+// spécifiques (mode 22…), procédures de réinitialisation, astuces, sources.
+model VehicleKnowledge {
+  id        String   @id @default(cuid())
+  key       String   @unique // ex. « volkswagen|polo|2016 »
+  make      String?
+  model     String?
+  year      Int?
+  data      String // JSON (VehicleKnowledge structuré)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // Une page/photo du programme d'entretien du carnet constructeur. Plusieurs par
 // véhicule (le plan tient souvent sur plusieurs pages). L'IA les analyse toutes
 // ensemble pour produire `Vehicle.servicePlanIntervals`.

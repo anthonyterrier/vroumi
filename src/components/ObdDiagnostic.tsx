@@ -29,6 +29,7 @@ import {
   diagnoseWithAI,
   saveOdometer,
   resetProcedureFromVin,
+  ensureVehicleKnowledge,
 } from "@/app/(app)/vehicles/[id]/diagnosis-ai-actions";
 import {
   SEVERITY_STYLE,
@@ -37,6 +38,7 @@ import {
   type ObdSnapshot,
 } from "@/lib/obd-diagnosis-fields";
 import type { ResetProcedure } from "@/lib/obd-reset-fields";
+import type { VehicleKnowledge } from "@/lib/vehicle-knowledge-fields";
 
 // --- Types Web Bluetooth minimaux (absents de lib.dom par défaut) ---------
 type BtChar = {
@@ -103,6 +105,10 @@ export function ObdDiagnostic({
   canSaveMileage,
   aiEnabled,
   resetAiEnabled,
+  knowledgeAiEnabled,
+  hasVehicleIdentity,
+  initialKnowledge,
+  knowledgeUpdatedAt,
   vehicleVin,
   currentMileage,
   lastReportCodes,
@@ -114,6 +120,10 @@ export function ObdDiagnostic({
   canSaveMileage: boolean;
   aiEnabled: boolean;
   resetAiEnabled: boolean;
+  knowledgeAiEnabled: boolean;
+  hasVehicleIdentity: boolean;
+  initialKnowledge: VehicleKnowledge | null;
+  knowledgeUpdatedAt: string | null;
   vehicleVin: string | null;
   currentMileage: number | null;
   lastReportCodes: string[];
@@ -150,6 +160,18 @@ export function ObdDiagnostic({
   const [resetProc, setResetProc] = useState<ResetProcedure | null>(null);
   const [resetBusy, setResetBusy] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+  // Base de connaissances IA du modèle (pannes, commandes spécifiques…).
+  const [knowledge, setKnowledge] = useState<VehicleKnowledge | null>(
+    initialKnowledge
+  );
+  const [knowUpdatedAt, setKnowUpdatedAt] = useState<string | null>(
+    knowledgeUpdatedAt
+  );
+  const [knowBusy, setKnowBusy] = useState(false);
+  const [knowError, setKnowError] = useState<string | null>(null);
+  // Réponses des commandes spécifiques testées (clé = commande).
+  const [cmdResults, setCmdResults] = useState<Record<string, string>>({});
+  const knowFetchedRef = useRef(false);
   // Aide au diagnostic IA.
   const [aiDiag, setAiDiag] = useState<ObdDiagnosis | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
@@ -324,6 +346,18 @@ export function ObdDiagnostic({
     await readVin();
     await readCodes();
     startLive();
+
+    // À la connexion, on construit / rafraîchit la base de connaissances du
+    // modèle « au fur et à mesure » (une seule fois par session ; sans cache,
+    // une recherche IA est lancée en tâche de fond).
+    if (
+      knowledgeAiEnabled &&
+      hasVehicleIdentity &&
+      !knowFetchedRef.current
+    ) {
+      knowFetchedRef.current = true;
+      void loadKnowledge(false);
+    }
   }
 
   // Mémorise l'appareil retenu (id + nom) pour la prochaine reconnexion.
@@ -711,6 +745,43 @@ export function ObdDiagnostic({
     }
   }
 
+  // Charge (ou construit) la base de connaissances du modèle. `force` relance
+  // une recherche IA même si un cache existe.
+  async function loadKnowledge(force = false) {
+    setKnowBusy(true);
+    setKnowError(null);
+    try {
+      const res = await ensureVehicleKnowledge(vehicleId, force);
+      if (res?.error) setKnowError(res.error);
+      else {
+        setKnowledge(res?.knowledge ?? null);
+        setKnowUpdatedAt(
+          res?.updatedAt ? new Date(res.updatedAt).toLocaleDateString("fr-FR") : null
+        );
+      }
+    } catch (e) {
+      setKnowError((e as Error).message);
+    } finally {
+      setKnowBusy(false);
+    }
+  }
+
+  // Exécute une commande spécifique de la base (ex. lecture kilométrage VW).
+  async function runKnowledgeCommand(command: string) {
+    const cmd = command.trim().toUpperCase();
+    if (!cmd || !connRef.current) return;
+    setCmdResults((r) => ({ ...r, [cmd]: "…" }));
+    let res: string;
+    try {
+      res =
+        (await send(cmd, 9000)).replace(/[\r\n>]+/g, " ").trim() ||
+        "(réponse vide)";
+    } catch (e) {
+      res = "Erreur : " + (e as Error).message;
+    }
+    setCmdResults((r) => ({ ...r, [cmd]: res }));
+  }
+
   // Console avancée : envoie une commande brute (OBD ou AT) et affiche la
   // réponse. Permet d'explorer, y compris le spécifique constructeur (mode 22).
   async function sendRaw() {
@@ -913,6 +984,196 @@ export function ObdDiagnostic({
           navigateur.
         </p>
       </div>
+
+      {/* Base de connaissances du modèle (IA + web), toujours visible */}
+      {(knowledgeAiEnabled || knowledge) && (
+        <div className="card space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold">Base de connaissances (IA)</h3>
+            {knowledgeAiEnabled && hasVehicleIdentity && (
+              <button
+                type="button"
+                onClick={() => loadKnowledge(true)}
+                disabled={knowBusy}
+                className="btn-secondary px-3 py-1 text-sm disabled:opacity-60"
+              >
+                {knowBusy
+                  ? "Recherche…"
+                  : knowledge
+                    ? "Mettre à jour"
+                    : "Rechercher"}
+              </button>
+            )}
+          </div>
+          <p className="text-[11px] text-gray-400">
+            Connaissances propres au modèle (pannes fréquentes, commandes
+            constructeur, procédures) recherchées sur le web par l&apos;IA,
+            mémorisées et enrichies à chaque connexion, puis réutilisées pour les
+            diagnostics.
+          </p>
+
+          {!hasVehicleIdentity && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Renseigne la marque, le modèle et l&apos;année du véhicule pour
+              construire sa base de connaissances.
+            </p>
+          )}
+          {knowError && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              {knowError}
+            </p>
+          )}
+
+          {knowledge && (
+            <div className="space-y-3">
+              {knowledge.vehicle && (
+                <p className="text-sm font-medium text-gray-800">
+                  {knowledge.vehicle}
+                  {knowUpdatedAt && (
+                    <span className="ml-2 text-[11px] font-normal text-gray-400">
+                      (mis à jour le {knowUpdatedAt})
+                    </span>
+                  )}
+                </p>
+              )}
+              {knowledge.summary && (
+                <p className="text-sm text-gray-600">{knowledge.summary}</p>
+              )}
+
+              {/* Commandes spécifiques constructeur, exécutables */}
+              {knowledge.obdCommands.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-gray-600">
+                    Commandes spécifiques (ex. lecture kilométrage)
+                  </p>
+                  {knowledge.obdCommands.map((c, i) => (
+                    <div
+                      key={i}
+                      className="rounded-lg border border-gray-200 p-2"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <span className="text-sm font-medium">
+                            {c.label || "Commande"}
+                          </span>{" "}
+                          <span className="font-mono text-xs text-brand-700">
+                            {c.command}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => runKnowledgeCommand(c.command)}
+                          disabled={!connected || busy || !c.command}
+                          className="btn-secondary px-3 py-1 text-xs disabled:opacity-60"
+                          title={
+                            connected
+                              ? undefined
+                              : "Connecte l'adaptateur pour tester"
+                          }
+                        >
+                          Tester
+                        </button>
+                      </div>
+                      {c.description && (
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          {c.description}
+                        </p>
+                      )}
+                      {cmdResults[c.command.trim().toUpperCase()] && (
+                        <p className="mt-1 break-all rounded bg-gray-50 px-2 py-1 font-mono text-xs text-gray-700">
+                          → {cmdResults[c.command.trim().toUpperCase()]}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                  <p className="text-[11px] text-gray-400">
+                    Commandes constructeur indicatives : certaines nécessitent une
+                    adresse ECU précise et peuvent ne rien renvoyer.
+                  </p>
+                </div>
+              )}
+
+              {/* Pannes fréquentes */}
+              {knowledge.commonFaults.length > 0 && (
+                <details className="rounded-lg border border-gray-200 p-2">
+                  <summary className="cursor-pointer text-sm font-medium">
+                    Pannes fréquentes ({knowledge.commonFaults.length})
+                  </summary>
+                  <ul className="mt-2 space-y-1">
+                    {knowledge.commonFaults.map((f, i) => (
+                      <li key={i} className="text-sm">
+                        {f.code && (
+                          <span className="font-mono font-semibold">
+                            {f.code}{" "}
+                          </span>
+                        )}
+                        <span className="font-medium">{f.title}</span>
+                        {f.description && (
+                          <span className="text-gray-600"> — {f.description}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+
+              {/* Procédures */}
+              {knowledge.resetProcedures.length > 0 && (
+                <details className="rounded-lg border border-gray-200 p-2">
+                  <summary className="cursor-pointer text-sm font-medium">
+                    Procédures ({knowledge.resetProcedures.length})
+                  </summary>
+                  <div className="mt-2 space-y-2">
+                    {knowledge.resetProcedures.map((p, i) => (
+                      <div key={i}>
+                        <p className="text-sm font-medium">{p.title}</p>
+                        {p.steps.length > 0 && (
+                          <ol className="list-decimal pl-5 text-sm text-gray-700">
+                            {p.steps.map((s, j) => (
+                              <li key={j}>{s}</li>
+                            ))}
+                          </ol>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+
+              {knowledge.tips.length > 0 && (
+                <ul className="list-disc space-y-0.5 pl-5 text-xs text-gray-600">
+                  {knowledge.tips.map((t, i) => (
+                    <li key={i}>{t}</li>
+                  ))}
+                </ul>
+              )}
+
+              {knowledge.sources.length > 0 && (
+                <div className="text-[11px] text-gray-500">
+                  <span className="font-medium">Sources : </span>
+                  {knowledge.sources.map((s, i) => (
+                    <span key={i}>
+                      {i > 0 && " · "}
+                      {s.url ? (
+                        <a
+                          href={s.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-brand-600 hover:underline"
+                        >
+                          {s.title || s.url}
+                        </a>
+                      ) : (
+                        s.title
+                      )}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {connected && (
         <>

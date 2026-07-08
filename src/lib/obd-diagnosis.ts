@@ -41,7 +41,8 @@ function extractJsonObject(text: string): unknown {
  */
 export async function runObdDiagnosis(
   vehicle: VehicleInfo,
-  snap: ObdSnapshot
+  snap: ObdSnapshot,
+  knowledgeContext?: string | null
 ): Promise<ObdDiagnosis> {
   if (!OBD_AI_ENABLED) {
     throw new Error("Aide au diagnostic IA non configurée (clé API manquante).");
@@ -95,7 +96,11 @@ ${freezeTxt}
 
 PRÉPARATION CONTRÔLE TECHNIQUE (monitors) :
 ${monitorsTxt}
-
+${
+  knowledgeContext
+    ? `\nBASE DE CONNAISSANCES DU MODÈLE (pannes fréquentes déjà recensées — à prendre en compte pour hiérarchiser les causes) :\n${knowledgeContext}\n`
+    : ""
+}
 Réponds UNIQUEMENT avec un objet JSON (pas de texte autour, pas de markdown) :
 {
   "summary": "synthèse en 1-2 phrases",

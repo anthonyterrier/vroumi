@@ -6,6 +6,12 @@ import { DeleteButton } from "@/components/DeleteButton";
 import { deleteDiagnosticReport } from "@/app/(app)/vehicles/[id]/diagnostic-actions";
 import { OBD_AI_ENABLED } from "@/lib/obd-diagnosis";
 import { OBD_RESET_AI_ENABLED } from "@/lib/obd-reset";
+import { VEHICLE_KNOWLEDGE_AI_ENABLED } from "@/lib/vehicle-knowledge";
+import {
+  VehicleKnowledgeSchema,
+  knowledgeKey,
+  type VehicleKnowledge,
+} from "@/lib/vehicle-knowledge-fields";
 import {
   ObdDiagnosisSchema,
   SEVERITY_STYLE,
@@ -30,14 +36,34 @@ export default async function DiagnosticPage({
   const { id } = await params;
   const { user, vehicle } = await requireVehicle(id);
 
-  const [perms, reports, mileage] = await Promise.all([
+  const knowKey = knowledgeKey(vehicle.make, vehicle.model, vehicle.year);
+  const [perms, reports, mileage, knowRow] = await Promise.all([
     getEffectiveVehiclePerms(user.id, vehicle.id),
     prisma.diagnosticReport.findMany({
       where: { vehicleId: vehicle.id },
       orderBy: { performedAt: "desc" },
     }),
     currentMileage(vehicle.id, vehicle.initialMileage),
+    knowKey
+      ? prisma.vehicleKnowledge.findUnique({ where: { key: knowKey } })
+      : Promise.resolve(null),
   ]);
+
+  // Base de connaissances du modèle déjà en cache (le composant peut la
+  // rafraîchir / la construire à la connexion).
+  let initialKnowledge: VehicleKnowledge | null = null;
+  let knowledgeUpdatedAt: string | null = null;
+  if (knowRow) {
+    try {
+      const parsed = VehicleKnowledgeSchema.safeParse(JSON.parse(knowRow.data));
+      if (parsed.success) {
+        initialKnowledge = parsed.data;
+        knowledgeUpdatedAt = formatDate(knowRow.updatedAt);
+      }
+    } catch {
+      initialKnowledge = null;
+    }
+  }
 
   // Historique : on parse les codes de chaque relevé (ordre du plus récent au
   // plus ancien) pour pouvoir calculer les codes apparus / disparus.
@@ -80,6 +106,10 @@ export default async function DiagnosticPage({
         canSaveMileage={perms.mileageAdd}
         aiEnabled={OBD_AI_ENABLED}
         resetAiEnabled={OBD_RESET_AI_ENABLED}
+        knowledgeAiEnabled={VEHICLE_KNOWLEDGE_AI_ENABLED}
+        hasVehicleIdentity={knowKey != null}
+        initialKnowledge={initialKnowledge}
+        knowledgeUpdatedAt={knowledgeUpdatedAt}
         vehicleVin={vehicle.vin}
         currentMileage={mileage}
         lastReportCodes={lastReportCodes}
