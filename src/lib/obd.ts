@@ -168,6 +168,19 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 /** PID temps réel usuels (mode 01). Filtrés par les PID réellement supportés. */
 export const LIVE_PIDS: LivePid[] = [
   {
+    key: "odometer",
+    cmd: "01A6",
+    label: "Kilométrage (odomètre)",
+    unit: "km",
+    // PID A6 (standard récent) : 4 octets, résolution 0,1 km.
+    parse: (b) =>
+      b.length >= 4
+        ? Math.round(
+            (b[0] * 16777216 + b[1] * 65536 + b[2] * 256 + b[3]) / 10
+          )
+        : null,
+  },
+  {
     key: "rpm",
     cmd: "010C",
     label: "Régime moteur",
@@ -308,12 +321,144 @@ export const LIVE_PIDS: LivePid[] = [
     unit: "V",
     parse: (b) => (b.length >= 2 ? round1((b[0] * 256 + b[1]) / 1000) : null),
   },
+  {
+    key: "catTemp",
+    cmd: "013C",
+    label: "Temp. catalyseur",
+    unit: "°C",
+    parse: (b) => (b.length >= 2 ? round1((b[0] * 256 + b[1]) / 10 - 40) : null),
+  },
+  {
+    key: "fuelRail",
+    cmd: "0123",
+    label: "Pression rampe carb.",
+    unit: "kPa",
+    parse: (b) => (b.length >= 2 ? (b[0] * 256 + b[1]) * 10 : null),
+  },
+  {
+    key: "egrCmd",
+    cmd: "012C",
+    label: "EGR commandé",
+    unit: "%",
+    parse: (b) => (b.length >= 1 ? Math.round((b[0] * 100) / 255) : null),
+  },
+  {
+    key: "egrError",
+    cmd: "012D",
+    label: "Erreur EGR",
+    unit: "%",
+    parse: (b) => (b.length >= 1 ? round1((b[0] - 128) * (100 / 128)) : null),
+  },
+  {
+    key: "o2v",
+    cmd: "0114",
+    label: "Sonde O2 (tension)",
+    unit: "V",
+    parse: (b) => (b.length >= 1 ? round1(b[0] / 200) : null),
+  },
+  {
+    key: "lambda",
+    cmd: "0144",
+    label: "Richesse commandée λ",
+    unit: "",
+    parse: (b) =>
+      b.length >= 2 ? Math.round(((b[0] * 256 + b[1]) / 32768) * 100) / 100 : null,
+  },
+  {
+    key: "pedal",
+    cmd: "0149",
+    label: "Pédale accélérateur",
+    unit: "%",
+    parse: (b) => (b.length >= 1 ? Math.round((b[0] * 100) / 255) : null),
+  },
+  {
+    key: "fuelRate",
+    cmd: "015E",
+    label: "Conso instantanée",
+    unit: "L/h",
+    parse: (b) => (b.length >= 2 ? round1((b[0] * 256 + b[1]) / 20) : null),
+  },
+  {
+    key: "distCleared",
+    cmd: "0131",
+    label: "Distance depuis effacement",
+    unit: "km",
+    parse: (b) => (b.length >= 2 ? b[0] * 256 + b[1] : null),
+  },
+  {
+    key: "ethanol",
+    cmd: "0152",
+    label: "Éthanol",
+    unit: "%",
+    parse: (b) => (b.length >= 1 ? Math.round((b[0] * 100) / 255) : null),
+  },
 ];
+
+/** Sous-ensemble de PID lus dans le freeze frame (instantané au défaut). */
+export const FREEZE_PID_KEYS = [
+  "rpm",
+  "speed",
+  "load",
+  "coolant",
+  "stft",
+  "ltft",
+  "map",
+  "timing",
+  "throttle",
+] as const;
 
 /** Lit la valeur d'un PID temps réel depuis une réponse brute. */
 export function parseLivePid(pid: LivePid, raw: string): number | null {
   const bytes = obdDataBytes(raw, pid.cmd);
   return bytes ? pid.parse(bytes) : null;
+}
+
+// Octets de données d'une réponse mode 02 (freeze frame) : "42 <PID> <frame>
+// <data>". On repère 42+PID, puis on saute l'octet de numéro de trame.
+function obdFreezeBytes(raw: string, pid: string): number[] | null {
+  if (isNoData(raw)) return null;
+  const hex = raw.replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+  const marker = "42" + pid.toUpperCase();
+  const at = hex.indexOf(marker);
+  if (at < 0) return null;
+  const rest = hex.slice(at + marker.length);
+  const bytes: number[] = [];
+  for (let i = 0; i + 1 < rest.length; i += 2) {
+    bytes.push(parseInt(rest.slice(i, i + 2), 16));
+  }
+  return bytes.slice(1); // saute l'octet de numéro de trame
+}
+
+/** Commande à envoyer pour lire un PID dans le freeze frame (mode 02, trame 0). */
+export function freezeCommand(pid: LivePid): string {
+  return "02" + pidNumber(pid.cmd) + "00";
+}
+
+/** Lit la valeur d'un PID depuis une réponse freeze frame (mode 02). */
+export function parseFreezePid(pid: LivePid, raw: string): number | null {
+  const bytes = obdFreezeBytes(raw, pidNumber(pid.cmd));
+  return bytes ? pid.parse(bytes) : null;
+}
+
+/** Nom du calculateur (mode 09 PID 0A) : ASCII, potentiellement multi-trame. */
+export function parseEcuName(raw: string): string | null {
+  if (isNoData(raw)) return null;
+  const bytes = responseBytes(raw);
+  let idx = -1;
+  for (let i = 0; i + 1 < bytes.length; i++) {
+    if (bytes[i] === 0x49 && bytes[i + 1] === 0x0a) {
+      idx = i + 2;
+      break;
+    }
+  }
+  if (idx < 0) return null;
+  let data = bytes.slice(idx);
+  if (data.length && data[0] === 0x01) data = data.slice(1); // octet de comptage
+  const ascii = data
+    .map((b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : ""))
+    .join("")
+    .trim();
+  return ascii || null;
 }
 
 /**
