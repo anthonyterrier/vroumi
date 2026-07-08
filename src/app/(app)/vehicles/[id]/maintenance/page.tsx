@@ -174,6 +174,7 @@ export default async function MaintenancePage({
                 maintenanceId={m.id}
                 attachments={m.attachments}
                 canEdit={canEdit}
+                aiEnabled={INVOICE_AI_ENABLED}
               />
             </div>
             {m.cost != null && (
@@ -207,6 +208,7 @@ export default async function MaintenancePage({
                     maintenanceId={m.id}
                     attachments={m.attachments}
                     canEdit={canEdit}
+                aiEnabled={INVOICE_AI_ENABLED}
                   />
                 </div>
               </div>
