@@ -256,6 +256,14 @@ export function ObdDiagnostic({
         const match = known.find((x) => x.id === saved);
         if (match) return match;
       }
+      // Beaucoup d'adaptateurs OBD changent d'identifiant BLE à chaque session :
+      // on retrouve alors l'appareil par son NOM mémorisé (identité stable, ce
+      // qui rend la reconnexion fiable — comme pour l'imprimante Niimbot).
+      const savedName = localStorage.getItem(DEVICE_NAME_KEY);
+      if (savedName) {
+        const byName = known.find((x) => (x.name ?? "") === savedName);
+        if (byName) return byName;
+      }
       // Un seul appareil déjà autorisé → on le prend.
       return known.length === 1 ? known[0] : null;
     } catch {
