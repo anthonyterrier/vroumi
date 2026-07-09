@@ -382,8 +382,20 @@ export function ObdDiagnostic({
     setRememberedName(device.name ?? null);
   }
 
-  // Connexion : par défaut on réutilise l'adaptateur mémorisé (sans sélecteur) ;
-  // forceChooser ouvre le sélecteur pour changer d'adaptateur.
+  function savedDeviceName(): string {
+    try {
+      return localStorage.getItem(DEVICE_NAME_KEY) || "";
+    } catch {
+      return "";
+    }
+  }
+
+  // Connexion. Ordre de préférence :
+  //  1. adaptateur déjà autorisé et exposé par getDevices() → reconnexion SANS
+  //     sélecteur (vrai auto). Indisponible sur certains navigateurs.
+  //  2. sinon, sélecteur PRÉ-FILTRÉ sur le nom mémorisé (un seul adaptateur
+  //     listé → un tap).
+  //  3. forceChooser (« Changer d'adaptateur ») → sélecteur complet.
   async function connect(forceChooser = false) {
     if (!("bluetooth" in navigator) || !window.isSecureContext) {
       setStatus(
@@ -400,11 +412,27 @@ export function ObdDiagnostic({
         if (device) setStatus(`Reconnexion à ${device.name ?? "l'adaptateur"}…`);
       }
       if (!device) {
-        setStatus("Sélection de l'adaptateur…");
-        device = await bt.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: OBD_SERVICES,
-        });
+        const savedName = savedDeviceName();
+        const useFilter = !forceChooser && !!savedName;
+        if (useFilter) {
+          setStatus(`Sélectionne « ${savedName} »…`);
+          try {
+            device = await bt.requestDevice({
+              filters: [{ name: savedName }],
+              optionalServices: OBD_SERVICES,
+            });
+          } catch {
+            // Filtre sans résultat / annulation : on ouvre la liste complète.
+            device = null;
+          }
+        }
+        if (!device) {
+          setStatus("Sélection de l'adaptateur…");
+          device = await bt.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: OBD_SERVICES,
+          });
+        }
       }
       rememberDevice(device);
       await setupDevice(device);
