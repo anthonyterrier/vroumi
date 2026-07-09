@@ -17,7 +17,13 @@ import {
   freezeCommand,
   parseFreezePid,
   pidNumber,
+  isNoData,
+  VAG_MODULES,
+  parseUdsDtcs,
+  isUdsNegative,
   type MonitorStatus,
+  type VagModule,
+  type UdsDtc,
 } from "@/lib/obd";
 import { describeDtc } from "@/lib/dtc-codes";
 import {
@@ -182,6 +188,12 @@ export function ObdDiagnostic({
   const [chartData, setChartData] = useState<LivePoint[]>([]);
   const [windowMin, setWindowMin] = useState(2);
   const liveValuesRef = useRef<Record<string, number | null>>({});
+  // Scan multi-modules VAG (style VCDS).
+  const [vagBusy, setVagBusy] = useState(false);
+  const [vagCurrent, setVagCurrent] = useState<string | null>(null);
+  const [vagResults, setVagResults] = useState<
+    { module: VagModule; status: "ok" | "clear" | "absent"; dtcs: UdsDtc[] }[]
+  >([]);
   // Console de commandes brute (mode avancé).
   const [rawCmd, setRawCmd] = useState("");
   const [rawLog, setRawLog] = useState<{ cmd: string; res: string }[]>([]);
@@ -952,6 +964,62 @@ export function ObdDiagnostic({
       res = "Erreur : " + (e as Error).message;
     }
     setRawLog((l) => [{ cmd, res }, ...l].slice(0, 25));
+  }
+
+  // Scan multi-modules VAG (style VCDS) : pour chaque calculateur, on règle
+  // l'en-tête CAN (ATSH/ATCRA + flow control) et on lit ses défauts en UDS
+  // (service 19 02, tous statuts). On restaure ensuite l'adressage OBD standard.
+  async function scanVagModules() {
+    if (!connRef.current) return;
+    setVagBusy(true);
+    setVagResults([]);
+    stopLive();
+    const results: {
+      module: VagModule;
+      status: "ok" | "clear" | "absent";
+      dtcs: UdsDtc[];
+    }[] = [];
+    try {
+      for (const mod of VAG_MODULES) {
+        setVagCurrent(mod.name);
+        try {
+          await send(`ATSH${mod.tx}`, 3000).catch(() => {});
+          await send(`ATCRA${mod.rx}`, 3000).catch(() => {});
+          await send(`ATFCSH${mod.tx}`, 3000).catch(() => {});
+          await send("ATFCSD300000", 3000).catch(() => {});
+          await send("ATFCSM1", 3000).catch(() => {});
+          const res = await send("1902FF", 7000);
+          if (isNoData(res)) {
+            results.push({ module: mod, status: "absent", dtcs: [] });
+          } else if (isUdsNegative(res)) {
+            // Réponse négative (souvent : aucun défaut / requête refusée).
+            results.push({ module: mod, status: "clear", dtcs: [] });
+          } else {
+            const dtcs = parseUdsDtcs(res);
+            if (dtcs === null) {
+              results.push({ module: mod, status: "absent", dtcs: [] });
+            } else {
+              results.push({
+                module: mod,
+                status: dtcs.length ? "ok" : "clear",
+                dtcs,
+              });
+            }
+          }
+        } catch {
+          results.push({ module: mod, status: "absent", dtcs: [] });
+        }
+        setVagResults([...results]);
+      }
+    } finally {
+      // Restauration de l'adressage OBD standard (sinon les lectures OBD
+      // suivantes peuvent échouer).
+      await send("ATFCSM0", 2000).catch(() => {});
+      await send("ATAR", 2000).catch(() => {});
+      await send("ATSH7DF", 2000).catch(() => {});
+      setVagCurrent(null);
+      setVagBusy(false);
+    }
   }
 
   // Construit l'instantané envoyé à l'IA (codes + valeurs relevées).
@@ -1800,6 +1868,90 @@ export function ObdDiagnostic({
               </ul>
             )}
           </div>
+
+          {/* Scan VAG multi-modules (style VCDS) — bus CAN uniquement */}
+          {protocol && /can|15765/i.test(protocol) && (
+            <div className="card space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold">
+                  Scan VAG — tous les calculateurs (style VCDS)
+                </h3>
+                <button
+                  type="button"
+                  onClick={scanVagModules}
+                  disabled={vagBusy || busy}
+                  className="btn-secondary px-3 py-1 text-sm disabled:opacity-60"
+                >
+                  {vagBusy ? "Scan…" : "Scanner"}
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-400">
+                Interroge chaque calculateur VAG (moteur, boîte, ABS, airbag,
+                combiné…) et lit ses défauts en UDS. <strong>Expérimental</strong>{" "}
+                : les adresses dépendent du modèle ; un module « injoignable »
+                n&apos;existe peut-être pas sur ce véhicule.
+              </p>
+              {vagBusy && vagCurrent && (
+                <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">
+                  Lecture : {vagCurrent}…
+                </p>
+              )}
+              {vagResults.length > 0 && (
+                <ul className="space-y-2">
+                  {vagResults.map((r) => (
+                    <li
+                      key={r.module.id}
+                      className="rounded-lg border border-gray-200 p-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium">
+                          {r.module.name}
+                        </span>
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[11px] ${
+                            r.status === "ok"
+                              ? "bg-red-100 text-red-800"
+                              : r.status === "clear"
+                                ? "bg-green-100 text-green-800"
+                                : "bg-gray-100 text-gray-500"
+                          }`}
+                        >
+                          {r.status === "ok"
+                            ? `${r.dtcs.length} défaut(s)`
+                            : r.status === "clear"
+                              ? "aucun défaut"
+                              : "injoignable"}
+                        </span>
+                      </div>
+                      {r.dtcs.length > 0 && (
+                        <ul className="mt-1 space-y-0.5">
+                          {r.dtcs.map((d, i) => (
+                            <li key={i} className="text-sm">
+                              <span className="font-mono font-semibold">
+                                {d.code}
+                              </span>
+                              <span className="text-gray-400"> ({d.raw})</span>
+                              {d.description && (
+                                <span className="text-gray-600">
+                                  {" "}
+                                  — {d.description}
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-[11px] text-amber-600">
+                ⚠️ Lecture seule. Après un scan, si les données temps réel ne
+                repartent pas, déconnecte puis reconnecte l&apos;adaptateur.
+                Indicatif — ne remplace pas un outil constructeur (VCDS…).
+              </p>
+            </div>
+          )}
 
           {/* VIN */}
           <div className="card space-y-3">
