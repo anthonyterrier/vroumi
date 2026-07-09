@@ -40,6 +40,31 @@ export async function saveVin(vehicleId: string, vin: string) {
   refresh(vehicleId);
 }
 
+/**
+ * Mémorise les informations véhicule lues sur le port OBD (ECU, Calibration ID,
+ * CVN, protocole…) pour les réafficher sans re-extraction. Silencieux si
+ * l'utilisateur n'a pas le droit d'éditer le véhicule.
+ */
+export async function saveVehicleObdInfo(
+  vehicleId: string,
+  info: { label: string; value: string }[]
+) {
+  const user = await requireUser();
+  await assertCanWrite();
+  const vehicle = await assertVehicleAccess(user.id, vehicleId);
+  if (!vehicle) return;
+  if (!(await getVehiclePerms(user.id, vehicleId)).vehiclesEdit) return;
+  const clean = (Array.isArray(info) ? info : [])
+    .filter((i) => i && i.label && i.value)
+    .map((i) => ({ label: String(i.label), value: String(i.value) }))
+    .slice(0, 50);
+  await prisma.vehicle.update({
+    where: { id: vehicleId },
+    data: { obdInfo: clean.length ? JSON.stringify(clean) : null },
+  });
+  refresh(vehicleId);
+}
+
 export type DiagnosticCode = {
   code: string;
   description: string;

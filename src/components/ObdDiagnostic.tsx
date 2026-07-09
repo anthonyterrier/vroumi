@@ -23,8 +23,14 @@ import { describeDtc } from "@/lib/dtc-codes";
 import {
   saveVin,
   saveDiagnosticReport,
+  saveVehicleObdInfo,
   type DiagnosticCode,
 } from "@/app/(app)/vehicles/[id]/diagnostic-actions";
+import {
+  LiveObdChart,
+  type LiveSeries,
+  type LivePoint,
+} from "@/components/LiveObdChart";
 import {
   diagnoseWithAI,
   saveOdometer,
@@ -90,6 +96,20 @@ const OBD_SERVICES = [
 const DEVICE_ID_KEY = "obd.deviceId";
 const DEVICE_NAME_KEY = "obd.deviceName";
 
+// Palette de couleurs pour les courbes du graphique temps réel.
+const CHART_COLORS = [
+  "#1f6f43",
+  "#2563eb",
+  "#dc2626",
+  "#d97706",
+  "#7c3aed",
+  "#0891b2",
+  "#db2777",
+  "#65a30d",
+];
+// Fenêtres de temps disponibles pour le graphique (en minutes).
+const CHART_WINDOWS = [1, 2, 5, 10, 30];
+
 type Conn = {
   device: BtDevice;
   writeChar: BtChar;
@@ -110,6 +130,7 @@ export function ObdDiagnostic({
   hasVehicleIdentity,
   initialKnowledge,
   knowledgeUpdatedAt,
+  initialVehicleInfo,
   vehicleVin,
   currentMileage,
   lastReportCodes,
@@ -125,6 +146,7 @@ export function ObdDiagnostic({
   hasVehicleIdentity: boolean;
   initialKnowledge: VehicleKnowledge | null;
   knowledgeUpdatedAt: string | null;
+  initialVehicleInfo: { label: string; value: string }[];
   vehicleVin: string | null;
   currentMileage: number | null;
   lastReportCodes: string[];
@@ -150,10 +172,16 @@ export function ObdDiagnostic({
   const [supportedPids, setSupportedPids] = useState<Set<string>>(new Set());
   const [liveOn, setLiveOn] = useState(false);
   // Extraction automatique de toutes les infos véhicule (mode 09 + AT).
+  // Initialisées avec les infos mémorisées de la connexion précédente.
   const [vehicleInfo, setVehicleInfo] = useState<
     { label: string; value: string }[]
-  >([]);
+  >(initialVehicleInfo);
   const [infoBusy, setInfoBusy] = useState(false);
+  // Graphique temps réel : PID cochés + points collectés + fenêtre (minutes).
+  const [chartKeys, setChartKeys] = useState<Set<string>>(new Set());
+  const [chartData, setChartData] = useState<LivePoint[]>([]);
+  const [windowMin, setWindowMin] = useState(2);
+  const liveValuesRef = useRef<Record<string, number | null>>({});
   // Console de commandes brute (mode avancé).
   const [rawCmd, setRawCmd] = useState("");
   const [rawLog, setRawLog] = useState<{ cmd: string; res: string }[]>([]);
@@ -199,6 +227,31 @@ export function ObdDiagnostic({
       knowledgeAliveRef.current = false;
     };
   }, []);
+
+  // Échantillonnage pour le graphique : tant que le temps réel tourne et qu'au
+  // moins une donnée est cochée, on relève les valeurs courantes toutes les 2 s.
+  // On conserve ~31 min d'historique (fenêtre max 30 min).
+  useEffect(() => {
+    if (!liveOn || chartKeys.size === 0) return;
+    const id = setInterval(() => {
+      const vals = liveValuesRef.current;
+      const point: LivePoint = { t: Date.now() };
+      let any = false;
+      chartKeys.forEach((k) => {
+        const v = vals[k];
+        if (v != null) {
+          point[k] = v;
+          any = true;
+        }
+      });
+      if (!any) return;
+      setChartData((prev) => {
+        const cutoff = Date.now() - 31 * 60 * 1000;
+        return [...prev, point].filter((p) => p.t >= cutoff);
+      });
+    }, 2000);
+    return () => clearInterval(id);
+  }, [liveOn, chartKeys]);
 
   // --- Transport BLE ------------------------------------------------------
   function onNotify(e: Event) {
@@ -775,6 +828,15 @@ export function ObdDiagnostic({
         ? `${info.length} information(s) récupérée(s).`
         : "Aucune information supplémentaire fournie par ce véhicule."
     );
+    // Mémorisation : on conserve ces infos pour les réafficher à la prochaine
+    // connexion sans avoir à les ré-extraire.
+    if (canEditVehicle && info.length) {
+      try {
+        await saveVehicleObdInfo(vehicleId, info);
+      } catch {
+        // non bloquant : l'affichage reste valable pour la session en cours.
+      }
+    }
   }
 
   // Recherche IA de la procédure de réinitialisation d'entretien via le VIN.
@@ -968,7 +1030,11 @@ export function ObdDiagnostic({
           if (!liveOnRef.current) break;
           try {
             const v = parseLivePid(pid, await send(pid.cmd, 3000));
-            setLive((prev) => ({ ...prev, [pid.key]: v }));
+            setLive((prev) => {
+              const next = { ...prev, [pid.key]: v };
+              liveValuesRef.current = next;
+              return next;
+            });
           } catch {
             // PID non supporté / timeout : on continue.
           }
@@ -1016,6 +1082,28 @@ export function ObdDiagnostic({
   const displayedLivePids = supportedPids.size
     ? LIVE_PIDS.filter((p) => supportedPids.has(pidNumber(p.cmd)))
     : LIVE_PIDS;
+
+  // Séries du graphique (données cochées), couleur stable par ordre d'affichage.
+  const chartSeries: LiveSeries[] = displayedLivePids
+    .filter((p) => chartKeys.has(p.key))
+    .map((p, i) => ({
+      key: p.key,
+      label: p.label,
+      unit: p.unit,
+      color: CHART_COLORS[i % CHART_COLORS.length],
+    }));
+  // Points visibles = derniers `windowMin` minutes.
+  const chartCutoff = Date.now() - windowMin * 60 * 1000;
+  const visiblePoints = chartData.filter((p) => p.t >= chartCutoff);
+
+  function toggleChartKey(key: string) {
+    setChartKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   return (
     <div className="space-y-4">
@@ -1574,13 +1662,64 @@ export function ObdDiagnostic({
                 </button>
               )}
             </div>
+
+            {/* Graphique des données cochées */}
+            {chartSeries.length > 0 && (
+              <div className="space-y-2 rounded-lg border border-gray-200 p-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className="text-xs text-gray-500">Fenêtre :</span>
+                    {CHART_WINDOWS.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setWindowMin(m)}
+                        className={`rounded px-2 py-0.5 text-xs ${
+                          windowMin === m
+                            ? "bg-brand-600 text-white"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {m} min
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setChartData([])}
+                    className="text-xs text-gray-500 hover:underline"
+                  >
+                    Effacer la courbe
+                  </button>
+                </div>
+                <LiveObdChart points={visiblePoints} series={chartSeries} />
+                {!liveOn && (
+                  <p className="text-[11px] text-amber-600">
+                    Démarre les données temps réel pour alimenter le graphique.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <p className="text-[11px] text-gray-400">
+              Coche une donnée pour la tracer sur le graphique (plusieurs
+              possibles).
+            </p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {displayedLivePids.map((pid) => {
                 const v = live[pid.key];
+                const checked = chartKeys.has(pid.key);
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={pid.key}
-                    className="rounded-lg border border-gray-200 p-2 text-center"
+                    onClick={() => toggleChartKey(pid.key)}
+                    className={`rounded-lg border p-2 text-center transition ${
+                      checked
+                        ? "border-brand-400 bg-brand-50"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                    title="Cocher pour tracer sur le graphique"
                   >
                     <div className="text-lg font-bold">
                       {v == null ? "—" : v}
@@ -1588,8 +1727,15 @@ export function ObdDiagnostic({
                         {v == null ? "" : pid.unit}
                       </span>
                     </div>
-                    <div className="text-[11px] text-gray-500">{pid.label}</div>
-                  </div>
+                    <div className="flex items-center justify-center gap-1 text-[11px] text-gray-500">
+                      <span
+                        className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                          checked ? "bg-brand-500" : "bg-gray-300"
+                        }`}
+                      />
+                      {pid.label}
+                    </div>
+                  </button>
                 );
               })}
             </div>

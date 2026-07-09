@@ -65,6 +65,22 @@ export default async function DiagnosticPage({
     }
   }
 
+  // Infos véhicule OBD mémorisées (ECU, Calibration ID…), affichées sans
+  // re-extraction.
+  let initialVehicleInfo: { label: string; value: string }[] = [];
+  if (vehicle.obdInfo) {
+    try {
+      const parsed = JSON.parse(vehicle.obdInfo);
+      if (Array.isArray(parsed)) {
+        initialVehicleInfo = parsed
+          .filter((i) => i && typeof i.label === "string" && typeof i.value === "string")
+          .map((i) => ({ label: i.label as string, value: i.value as string }));
+      }
+    } catch {
+      initialVehicleInfo = [];
+    }
+  }
+
   // Historique : on parse les codes de chaque relevé (ordre du plus récent au
   // plus ancien) pour pouvoir calculer les codes apparus / disparus.
   const history = reports.map((r) => {
@@ -110,6 +126,7 @@ export default async function DiagnosticPage({
         hasVehicleIdentity={knowKey != null}
         initialKnowledge={initialKnowledge}
         knowledgeUpdatedAt={knowledgeUpdatedAt}
+        initialVehicleInfo={initialVehicleInfo}
         vehicleVin={vehicle.vin}
         currentMileage={mileage}
         lastReportCodes={lastReportCodes}

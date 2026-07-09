@@ -148,6 +148,10 @@ model Vehicle {
   // 12 = annuel (taxi, VTC, location…), 60 = collection.
   inspectionIntervalMonths Int?
   notes         String?
+  // Infos véhicule lues sur le port OBD (mode 09 : ECU, Calibration ID, CVN…)
+  // et l'adaptateur. JSON [{ label, value }]. Mémorisées pour ne pas les
+  // re-extraire à chaque connexion.
+  obdInfo       String?
 
   // --- Données issues de la carte grise (certificat d'immatriculation) ---
   // Repères normalisés entre parenthèses. Tous facultatifs ; alimentés depuis
