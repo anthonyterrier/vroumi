@@ -23,7 +23,7 @@ function decodeDtcPair(a: number, b: number): string {
   );
 }
 
-import { isValidDtc } from "@/lib/dtc-codes";
+import { isValidDtc, describeDtc } from "@/lib/dtc-codes";
 
 // Retire les lignes de bruit ELM327 et les préfixes de trame ISO-TP, puis
 // renvoie le flux d'octets concaténé.
@@ -693,4 +693,74 @@ export function parseFreezeFrameDtc(raw: string): string | null {
     }
   }
   return null;
+}
+
+// --- VAG / UDS (style VCDS) ------------------------------------------------
+//
+// Lecture des défauts par calculateur sur bus CAN (ISO 15765) via l'adressage
+// UDS propre au groupe VW/Audi/Seat/Skoda. Chaque module a un en-tête de requête
+// (tx) et une adresse de réponse (rx). Pour le powertrain rx = tx + 8 ; pour les
+// autres modules rx = tx + 0x6A (schéma VAG documenté par la communauté).
+// ⚠️ Indicatif : les adresses varient selon la plateforme/passerelle du modèle.
+export type VagModule = { id: string; name: string; tx: string; rx: string };
+
+export const VAG_MODULES: VagModule[] = [
+  { id: "01", name: "Moteur (01)", tx: "7E0", rx: "7E8" },
+  { id: "02", name: "Boîte de vitesses (02)", tx: "7E1", rx: "7E9" },
+  { id: "03", name: "ABS / ESP (03)", tx: "713", rx: "77D" },
+  { id: "08", name: "Climatisation (08)", tx: "746", rx: "7B0" },
+  { id: "09", name: "Électronique centrale (09)", tx: "70E", rx: "778" },
+  { id: "15", name: "Airbags (15)", tx: "715", rx: "77F" },
+  { id: "16", name: "Électronique colonne direction (16)", tx: "716", rx: "780" },
+  { id: "17", name: "Combiné / instruments (17)", tx: "714", rx: "77E" },
+  { id: "19", name: "Passerelle / Gateway (19)", tx: "710", rx: "77A" },
+  { id: "44", name: "Direction assistée (44)", tx: "712", rx: "77C" },
+  { id: "5F", name: "Électronique info / MMI (5F)", tx: "773", rx: "7DD" },
+];
+
+export type UdsDtc = {
+  code: string; // code P/C/B/U dérivé des 2 premiers octets
+  raw: string; // 3 octets UDS bruts en hexa
+  status: number; // octet de statut UDS
+  description: string; // libellé générique si connu
+};
+
+/** Vrai si la réponse est un « negative response » UDS (7F <sid> <nrc>). */
+export function isUdsNegative(raw: string): boolean {
+  const hex = raw.replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+  return hex.includes("7F19");
+}
+
+/**
+ * Analyse une réponse UDS 0x19 sous-fonction 0x02 (reportDTCByStatusMask) :
+ * « 59 02 <mask> [dtc(3) statut(1)]… ». Renvoie la liste des défauts, [] si le
+ * module répond sans défaut, ou null si pas de réponse exploitable.
+ */
+export function parseUdsDtcs(raw: string): UdsDtc[] | null {
+  if (isNoData(raw)) return null;
+  const bytes = responseBytes(raw);
+  let idx = -1;
+  for (let i = 0; i + 1 < bytes.length; i++) {
+    if (bytes[i] === 0x59 && bytes[i + 1] === 0x02) {
+      idx = i + 2;
+      break;
+    }
+  }
+  if (idx < 0) return null;
+  // Octet suivant = masque de disponibilité du statut, on le saute.
+  const data = bytes.slice(idx + 1);
+  const out: UdsDtc[] = [];
+  for (let i = 0; i + 3 < data.length; i += 4) {
+    const b0 = data[i];
+    const b1 = data[i + 1];
+    const b2 = data[i + 2];
+    const status = data[i + 3];
+    if (b0 === 0 && b1 === 0 && b2 === 0) continue;
+    const code = decodeDtcPair(b0, b1);
+    const rawHex = [b0, b1, b2]
+      .map((x) => x.toString(16).toUpperCase().padStart(2, "0"))
+      .join("");
+    out.push({ code, raw: rawHex, status, description: describeDtc(code) });
+  }
+  return out;
 }
