@@ -256,6 +256,14 @@ export function ObdDiagnostic({
         const match = known.find((x) => x.id === saved);
         if (match) return match;
       }
+      // Beaucoup d'adaptateurs OBD changent d'identifiant BLE à chaque session :
+      // on retrouve alors l'appareil par son NOM mémorisé (identité stable, ce
+      // qui rend la reconnexion fiable — comme pour l'imprimante Niimbot).
+      const savedName = localStorage.getItem(DEVICE_NAME_KEY);
+      if (savedName) {
+        const byName = known.find((x) => (x.name ?? "") === savedName);
+        if (byName) return byName;
+      }
       // Un seul appareil déjà autorisé → on le prend.
       return known.length === 1 ? known[0] : null;
     } catch {
@@ -358,13 +366,15 @@ export function ObdDiagnostic({
     await readCodes();
     startLive();
 
-    // À la connexion, on construit / rafraîchit la base de connaissances du
-    // modèle « au fur et à mesure » (une seule fois par session ; sans cache,
-    // une recherche IA est lancée en tâche de fond).
+    // À la connexion, on construit la base de connaissances du modèle SEULEMENT
+    // si elle n'existe pas encore. Une fois constituée, elle est réutilisée et
+    // n'est PLUS recherchée automatiquement (mise à jour manuelle via le
+    // bouton « Mettre à jour »).
     if (
       knowledgeAiEnabled &&
       hasVehicleIdentity &&
-      !knowFetchedRef.current
+      !knowFetchedRef.current &&
+      !knowledge
     ) {
       knowFetchedRef.current = true;
       void loadKnowledge(false);
