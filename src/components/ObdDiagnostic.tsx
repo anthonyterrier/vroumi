@@ -366,13 +366,15 @@ export function ObdDiagnostic({
     await readCodes();
     startLive();
 
-    // À la connexion, on construit / rafraîchit la base de connaissances du
-    // modèle « au fur et à mesure » (une seule fois par session ; sans cache,
-    // une recherche IA est lancée en tâche de fond).
+    // À la connexion, on construit la base de connaissances du modèle SEULEMENT
+    // si elle n'existe pas encore. Une fois constituée, elle est réutilisée et
+    // n'est PLUS recherchée automatiquement (mise à jour manuelle via le
+    // bouton « Mettre à jour »).
     if (
       knowledgeAiEnabled &&
       hasVehicleIdentity &&
-      !knowFetchedRef.current
+      !knowFetchedRef.current &&
+      !knowledge
     ) {
       knowFetchedRef.current = true;
       void loadKnowledge(false);

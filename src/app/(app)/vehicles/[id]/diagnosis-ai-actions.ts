@@ -189,9 +189,6 @@ export async function resetProcedureFromVin(
   }
 }
 
-// Fraîcheur du cache : au-delà, on rafraîchit à la connexion.
-const KNOWLEDGE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 jours
-
 /** Parse le JSON stocké en base de connaissances de façon tolérante. */
 function parseKnowledge(data: string): VehicleKnowledge | null {
   try {
@@ -276,11 +273,12 @@ export async function startVehicleKnowledgeResearch(
 
   const existing = await prisma.vehicleKnowledge.findUnique({ where: { key } });
 
-  // Cache frais et prêt → on le renvoie directement.
+  // Base déjà constituée → on la RÉUTILISE telle quelle, sans relancer de
+  // recherche IA (la mise à jour reste manuelle via `force`). C'est le cœur du
+  // cache : une fois à jour, on ne recherche plus.
   if (existing && !force && existing.status === "ready") {
-    const fresh = Date.now() - existing.updatedAt.getTime() < KNOWLEDGE_TTL_MS;
     const knowledge = parseKnowledge(existing.data);
-    if (fresh && knowledge) {
+    if (knowledge) {
       return {
         status: "ready",
         knowledge,
