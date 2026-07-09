@@ -14,6 +14,7 @@ import {
 // navigateur autorise l'accès, même quand on liste « tous les appareils ».
 const NIIMBOT_SERVICE = "e7810a71-73ae-499d-8c15-faa9aef0c3f2";
 const DEVICE_ID_KEY = "niimbot.deviceId";
+const DEVICE_NAME_KEY = "niimbot.deviceName";
 
 // Sens d'impression : la tête est sur l'axe largeur ("top", ex. M2) ou hauteur
 // ("left"). On NE force PAS de valeur : on lit getModelMetadata() du modèle réel.
@@ -55,8 +56,8 @@ type NiimbotClient = InstanceType<NiimbotModule["NiimbotBluetoothClient"]>;
 
 // Interface minimale de navigator.bluetooth (types Web Bluetooth absents de TS).
 type BluetoothLike = {
-  requestDevice: (opts?: unknown) => Promise<{ id: string }>;
-  getDevices?: () => Promise<Array<{ id: string }>>;
+  requestDevice: (opts?: unknown) => Promise<{ id: string; name?: string }>;
+  getDevices?: () => Promise<Array<{ id: string; name?: string }>>;
 };
 
 // Arrondit au multiple de 8 supérieur : chaque dimension du canvas doit être un
@@ -285,7 +286,9 @@ export function QrLabel({
     // niimbluelib ne remontent pas la M2 (iOS/Bluefy surtout). On liste TOUT,
     // et on mémorise l'appareil choisi pour les fois suivantes.
     bt.requestDevice = async () => {
+      let savedName = "";
       try {
+        savedName = localStorage.getItem(DEVICE_NAME_KEY) || "";
         const saved = localStorage.getItem(DEVICE_ID_KEY);
         if (saved && bt.getDevices) {
           const known = await bt.getDevices();
@@ -295,12 +298,29 @@ export function QrLabel({
       } catch {
         // localStorage / getDevices indisponible → on retombe sur la liste.
       }
-      const d = await origRequestDevice({
-        acceptAllDevices: true,
-        optionalServices: [NIIMBOT_SERVICE],
-      });
+      // getDevices() n'expose pas l'imprimante (fréquent selon le navigateur) :
+      // on pré-filtre le sélecteur sur le nom mémorisé → une seule imprimante
+      // listée, un tap. Repli sur la liste complète si le nom ne matche rien.
+      let d: { id: string; name?: string } | null = null;
+      if (savedName) {
+        try {
+          d = await origRequestDevice({
+            filters: [{ name: savedName }],
+            optionalServices: [NIIMBOT_SERVICE],
+          });
+        } catch {
+          d = null;
+        }
+      }
+      if (!d) {
+        d = await origRequestDevice({
+          acceptAllDevices: true,
+          optionalServices: [NIIMBOT_SERVICE],
+        });
+      }
       try {
         localStorage.setItem(DEVICE_ID_KEY, d.id);
+        localStorage.setItem(DEVICE_NAME_KEY, d.name ?? "");
       } catch {
         // stockage indisponible : sans conséquence, on redemandera la liste.
       }
