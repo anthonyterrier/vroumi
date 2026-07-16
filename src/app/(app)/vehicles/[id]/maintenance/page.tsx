@@ -8,6 +8,7 @@ import { MaintenanceAttachments } from "@/components/MaintenanceAttachments";
 import { MaintenanceFields } from "@/components/MaintenanceFields";
 import { AddMaintenanceForm } from "@/components/AddMaintenanceForm";
 import { OilLabel } from "@/components/OilLabel";
+import { OIL_AI_ENABLED } from "@/lib/oil-extract";
 import {
   updateMaintenance,
   deleteMaintenance,
@@ -150,6 +151,7 @@ export default async function MaintenancePage({
             vehicleId={vehicle.id}
             vehicleName={vehicle.name}
             plate={vehicle.plate}
+            aiEnabled={OIL_AI_ENABLED}
           />
         </div>
       </details>

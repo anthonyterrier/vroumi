@@ -1,11 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useActionState, useCallback, useEffect, useRef, useState } from "react";
 import {
   useNiimbotPrinter,
   round8,
   fitOneLine,
 } from "@/components/useNiimbotPrinter";
+import { SubmitButton } from "@/components/SubmitButton";
+import {
+  scanOilInfo,
+  type OilScanState,
+} from "@/app/(app)/vehicles/[id]/oil-actions";
 
 type OilFields = {
   brand: string;
@@ -32,16 +37,23 @@ export function OilLabel({
   vehicleId,
   vehicleName,
   plate,
+  aiEnabled,
 }: {
   vehicleId: string;
   vehicleName: string;
   plate: string | null;
+  aiEnabled: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { printerConnected, status, setStatus, print, disconnect } =
     useNiimbotPrinter();
   const storeKey = `oil.${vehicleId}`;
   const [f, setF] = useState<OilFields>(EMPTY);
+  // Analyse IA d'une photo (facture ou bidon) pour pré-remplir les champs.
+  const [scan, scanAction] = useActionState<OilScanState, FormData>(
+    scanOilInfo.bind(null, vehicleId),
+    undefined
+  );
   // Date du jour (figée à l'ouverture) affichée sur l'étiquette.
   const [dateStr] = useState(() => new Date().toLocaleDateString("fr-FR"));
 
@@ -66,6 +78,19 @@ export function OilLabel({
       return next;
     });
   }
+
+  // À chaque nouvelle extraction IA, on pré-remplit les champs trouvés.
+  useEffect(() => {
+    const x = scan?.fields;
+    if (!x) return;
+    const patch: Partial<OilFields> = {};
+    if (x.brand) patch.brand = x.brand;
+    if (x.viscosity) patch.viscosity = x.viscosity;
+    if (x.norm) patch.norm = x.norm;
+    if (x.quantity) patch.quantity = x.quantity;
+    if (Object.keys(patch).length) update(patch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scan]);
 
   const buildLabelCanvas =
     useCallback(async (): Promise<HTMLCanvasElement | null> => {
@@ -157,6 +182,39 @@ export function OilLabel({
           référence de l&apos;huile et le véhicule concerné.
         </p>
       </div>
+
+      {aiEnabled && (
+        <form
+          action={scanAction}
+          className="space-y-2 rounded-lg border border-brand-200 bg-brand-50 p-2"
+        >
+          <p className="text-xs text-gray-600">
+            📷 Remplis automatiquement les champs depuis une photo de la{" "}
+            <strong>facture</strong> d&apos;entretien ou du <strong>bidon</strong>{" "}
+            d&apos;huile.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="file"
+              name="file"
+              accept="image/*,application/pdf"
+              capture="environment"
+              className="text-sm"
+            />
+            <SubmitButton
+              className="btn-secondary px-3 py-1 text-sm"
+              pendingLabel="Analyse…"
+            >
+              Analyser (IA)
+            </SubmitButton>
+          </div>
+          {scan?.error && (
+            <p className="rounded bg-red-50 px-2 py-1 text-sm text-red-700">
+              {scan.error}
+            </p>
+          )}
+        </form>
+      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
