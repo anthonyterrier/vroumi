@@ -1432,6 +1432,50 @@ export function ObdDiagnostic({
         </div>
       )}
 
+      {/* Informations véhicule — persistées : visibles même déconnecté */}
+      {(connected || vehicleInfo.length > 0) && (
+        <div className="card space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold">Informations véhicule</h3>
+            <button
+              type="button"
+              onClick={probeAllInfo}
+              disabled={!connected || infoBusy || busy}
+              className="btn-secondary px-3 py-1 text-sm disabled:opacity-60"
+              title={connected ? undefined : "Connecte l'adaptateur pour actualiser"}
+            >
+              {infoBusy ? "Lecture…" : "Tout récupérer"}
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400">
+            Informations standard du véhicule et de l&apos;adaptateur (identité,
+            calculateur, calibration…). <strong>Mémorisées</strong> : elles
+            restent affichées après rechargement, même déconnecté ; « Tout
+            récupérer » les met à jour à la prochaine connexion.
+          </p>
+          {vehicleInfo.length > 0 ? (
+            <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+              {vehicleInfo.map((it, i) => (
+                <li
+                  key={i}
+                  className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5 text-sm"
+                >
+                  <span className="text-gray-500">{it.label}</span>
+                  <span className="break-all font-mono text-gray-800">
+                    {it.value}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-gray-400">
+              Aucune info encore. Connecte l&apos;adaptateur puis « Tout
+              récupérer ».
+            </p>
+          )}
+        </div>
+      )}
+
       {connected && (
         <>
           {/* Codes défaut */}
@@ -1832,41 +1876,6 @@ export function ObdDiagnostic({
                 : ""}
               .
             </p>
-          </div>
-
-          {/* Informations véhicule (extraction automatique) */}
-          <div className="card space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold">Informations véhicule</h3>
-              <button
-                type="button"
-                onClick={probeAllInfo}
-                disabled={infoBusy || busy}
-                className="btn-secondary px-3 py-1 text-sm disabled:opacity-60"
-              >
-                {infoBusy ? "Lecture…" : "Tout récupérer"}
-              </button>
-            </div>
-            <p className="text-[11px] text-gray-400">
-              Interroge automatiquement toutes les informations standard fournies
-              par le véhicule et l&apos;adaptateur (identité, calculateur,
-              calibration…), sans avoir à connaître les commandes.
-            </p>
-            {vehicleInfo.length > 0 && (
-              <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
-                {vehicleInfo.map((it, i) => (
-                  <li
-                    key={i}
-                    className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5 text-sm"
-                  >
-                    <span className="text-gray-500">{it.label}</span>
-                    <span className="break-all font-mono text-gray-800">
-                      {it.value}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
 
           {/* Scan VAG multi-modules (style VCDS) — bus CAN uniquement */}

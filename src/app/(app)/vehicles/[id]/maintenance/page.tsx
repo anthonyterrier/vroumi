@@ -7,6 +7,7 @@ import { DeleteButton } from "@/components/DeleteButton";
 import { MaintenanceAttachments } from "@/components/MaintenanceAttachments";
 import { MaintenanceFields } from "@/components/MaintenanceFields";
 import { AddMaintenanceForm } from "@/components/AddMaintenanceForm";
+import { OilLabel } from "@/components/OilLabel";
 import {
   updateMaintenance,
   deleteMaintenance,
@@ -138,6 +139,19 @@ export default async function MaintenancePage({
         <p className="mt-2 text-[11px] text-gray-400">
           {MAINTENANCE_DISCLAIMER}
         </p>
+      </details>
+
+      <details className="rounded-lg border border-gray-200 p-3 text-sm">
+        <summary className="cursor-pointer font-medium text-gray-700">
+          🖨️ Étiquette huile (à coller sur le bidon)
+        </summary>
+        <div className="mt-3">
+          <OilLabel
+            vehicleId={vehicle.id}
+            vehicleName={vehicle.name}
+            plate={vehicle.plate}
+          />
+        </div>
       </details>
 
       <div className="space-y-2">
