@@ -1,14 +1,17 @@
 import "server-only";
+import { spawn } from "node:child_process";
 import Anthropic from "@anthropic-ai/sdk";
 import { isAcceptedImageType, isPdf } from "@/lib/carte-grise-fields";
 
 // --- Choix du fournisseur IA ------------------------------------------------
 //
 // Par défaut : Claude (Anthropic). Si LOCAL_AI_BASE_URL est renseigné dans le
-// `.env`, les fonctions vision/texte appellent une IA locale compatible OpenAI
-// (Ollama, LM Studio…) au lieu de Claude. Les fonctions de RECHERCHE WEB
-// (base de connaissances, procédure de réinitialisation) restent sur Claude :
-// aucune IA locale ne fournit l'outil de recherche web.
+// `.env`, TOUTES les fonctions IA (vision/texte, base de connaissances,
+// procédure de réinitialisation) appellent une IA locale compatible OpenAI
+// (Ollama, LM Studio…) au lieu de Claude. Nuance : avec Claude, la base de
+// connaissances et la réinit utilisent la RECHERCHE WEB (sources à l'appui) ;
+// avec une IA locale (sans accès web), la réponse provient des connaissances
+// du modèle. Les PDF sont rasterisés en image pour l'IA locale (pdftoppm).
 //
 // Variables .env :
 //   LOCAL_AI_BASE_URL   ex. http://192.168.1.50:11434/v1   (Ollama, avec /v1)
@@ -91,17 +94,86 @@ async function anthropicComplete(
     .trim();
 }
 
+/**
+ * Convertit une page de PDF en PNG via `pdftoppm` (poppler-utils), en lisant le
+ * PDF sur stdin et en récupérant le PNG sur stdout. Renvoie null si l'outil est
+ * absent ou si la page n'existe pas (fin du document).
+ */
+function rasterizePdfPage(pdf: Buffer, page: number): Promise<Buffer | null> {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      // -singlefile + sortie « - » => écrit le PNG sur stdout.
+      child = spawn("pdftoppm", [
+        "-png",
+        "-singlefile",
+        "-r",
+        "200",
+        "-f",
+        String(page),
+        "-l",
+        String(page),
+        "-",
+        "-",
+      ]);
+    } catch {
+      resolve(null);
+      return;
+    }
+    const chunks: Buffer[] = [];
+    let failed = false;
+    child.on("error", () => {
+      // Binaire introuvable (ENOENT) ou non exécutable.
+      failed = true;
+      resolve(null);
+    });
+    child.stdout.on("data", (d: Buffer) => chunks.push(d));
+    child.on("close", (code) => {
+      if (failed) return;
+      const out = Buffer.concat(chunks);
+      resolve(code === 0 && out.length > 0 ? out : null);
+    });
+    child.stdin.on("error", () => {}); // évite EPIPE si le process meurt tôt
+    child.stdin.end(pdf);
+  });
+}
+
+/**
+ * Remplace chaque PDF de la liste par une (des) image(s) PNG rasterisées, pour
+ * que l'IA locale (vision uniquement) puisse les lire. Rasterise jusqu'à 5
+ * pages. Lève un message clair si `pdftoppm` n'est pas installé sur le serveur.
+ */
+async function pdfFilesToImages(files: AiFile[]): Promise<AiFile[]> {
+  const out: AiFile[] = [];
+  for (const f of files) {
+    if (!isPdf(f.mimeType)) {
+      out.push(f);
+      continue;
+    }
+    const pages: Buffer[] = [];
+    for (let p = 1; p <= 5; p++) {
+      const png = await rasterizePdfPage(f.buffer, p);
+      if (!png) break;
+      pages.push(png);
+    }
+    if (pages.length === 0) {
+      throw new Error(
+        "Impossible de convertir le PDF en image pour l'IA locale. Installez poppler-utils sur le serveur (sudo apt install -y poppler-utils) ou importez une PHOTO du document."
+      );
+    }
+    for (const png of pages) out.push({ buffer: png, mimeType: "image/png" });
+  }
+  return out;
+}
+
 // API compatible OpenAI (Ollama : POST {base}/chat/completions).
 async function localComplete(
   prompt: string,
-  files: AiFile[],
+  rawFiles: AiFile[],
   maxTokens: number
 ): Promise<string> {
-  if (files.some((f) => isPdf(f.mimeType))) {
-    throw new Error(
-      "Le modèle local ne lit pas les PDF : fournis une image (photo) ou repasse sur Claude."
-    );
-  }
+  // L'IA locale ne lit que des images : on rasterise les PDF en PNG.
+  const files = await pdfFilesToImages(rawFiles);
   const hasImages = files.length > 0;
   // Modèle vision pour les images ; modèle texte dédié sinon (s'il existe).
   const model =
