@@ -1,5 +1,8 @@
 import "server-only";
 import { spawn } from "node:child_process";
+import { mkdtemp, writeFile, readFile, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { isAcceptedImageType, isPdf } from "@/lib/carte-grise-fields";
 
@@ -94,54 +97,62 @@ async function anthropicComplete(
     .trim();
 }
 
-/**
- * Convertit une page de PDF en PNG via `pdftoppm` (poppler-utils), en lisant le
- * PDF sur stdin et en récupérant le PNG sur stdout. Renvoie null si l'outil est
- * absent ou si la page n'existe pas (fin du document).
- */
-function rasterizePdfPage(pdf: Buffer, page: number): Promise<Buffer | null> {
+/** Lance `pdftoppm` avec les arguments donnés. Renvoie false si l'outil est
+ * absent (ENOENT) ou termine en erreur. */
+function runPdftoppm(args: string[]): Promise<boolean> {
   return new Promise((resolve) => {
     let child;
     try {
-      // -singlefile + sortie « - » => écrit le PNG sur stdout.
-      child = spawn("pdftoppm", [
-        "-png",
-        "-singlefile",
-        "-r",
-        "200",
-        "-f",
-        String(page),
-        "-l",
-        String(page),
-        "-",
-        "-",
-      ]);
+      child = spawn("pdftoppm", args);
     } catch {
-      resolve(null);
+      resolve(false);
       return;
     }
-    const chunks: Buffer[] = [];
-    let failed = false;
-    child.on("error", () => {
-      // Binaire introuvable (ENOENT) ou non exécutable.
-      failed = true;
-      resolve(null);
+    let stderr = "";
+    child.on("error", () => resolve(false)); // binaire introuvable
+    child.stderr?.on("data", (d: Buffer) => {
+      stderr += d.toString();
     });
-    child.stdout.on("data", (d: Buffer) => chunks.push(d));
     child.on("close", (code) => {
-      if (failed) return;
-      const out = Buffer.concat(chunks);
-      resolve(code === 0 && out.length > 0 ? out : null);
+      if (code !== 0 && stderr) console.error("pdftoppm:", stderr.slice(0, 300));
+      resolve(code === 0);
     });
-    child.stdin.on("error", () => {}); // évite EPIPE si le process meurt tôt
-    child.stdin.end(pdf);
   });
 }
 
 /**
+ * Rasterise un PDF en PNG (une image par page, jusqu'à 5) via `pdftoppm`
+ * (poppler-utils). Passe par un fichier temporaire : pdftoppm ne lit pas le PDF
+ * depuis stdin de façon fiable selon les versions. Renvoie [] en cas d'échec
+ * (outil absent, PDF illisible).
+ */
+async function rasterizePdf(pdf: Buffer): Promise<Buffer[]> {
+  let dir: string | null = null;
+  try {
+    dir = await mkdtemp(join(tmpdir(), "vroumi-pdf-"));
+    const inPath = join(dir, "in.pdf");
+    const outPrefix = join(dir, "page");
+    await writeFile(inPath, pdf);
+    // -l 5 : au plus 5 pages ; sortie -> page-1.png, page-2.png, …
+    const ok = await runPdftoppm(["-png", "-r", "200", "-l", "5", inPath, outPrefix]);
+    if (!ok) return [];
+    const names = (await readdir(dir))
+      .filter((n) => n.startsWith("page") && n.endsWith(".png"))
+      .sort();
+    const pages: Buffer[] = [];
+    for (const n of names) pages.push(await readFile(join(dir, n)));
+    return pages;
+  } catch {
+    return [];
+  } finally {
+    if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
  * Remplace chaque PDF de la liste par une (des) image(s) PNG rasterisées, pour
- * que l'IA locale (vision uniquement) puisse les lire. Rasterise jusqu'à 5
- * pages. Lève un message clair si `pdftoppm` n'est pas installé sur le serveur.
+ * que l'IA locale (vision uniquement) puisse les lire. Lève un message clair si
+ * `pdftoppm` n'est pas installé (ou si le PDF est illisible).
  */
 async function pdfFilesToImages(files: AiFile[]): Promise<AiFile[]> {
   const out: AiFile[] = [];
@@ -150,15 +161,10 @@ async function pdfFilesToImages(files: AiFile[]): Promise<AiFile[]> {
       out.push(f);
       continue;
     }
-    const pages: Buffer[] = [];
-    for (let p = 1; p <= 5; p++) {
-      const png = await rasterizePdfPage(f.buffer, p);
-      if (!png) break;
-      pages.push(png);
-    }
+    const pages = await rasterizePdf(f.buffer);
     if (pages.length === 0) {
       throw new Error(
-        "Impossible de convertir le PDF en image pour l'IA locale. Installez poppler-utils sur le serveur (sudo apt install -y poppler-utils) ou importez une PHOTO du document."
+        "Impossible de convertir le PDF en image pour l'IA locale. Vérifiez que poppler-utils est installé (sudo apt install -y poppler-utils) ou importez une PHOTO du document."
       );
     }
     for (const png of pages) out.push({ buffer: png, mimeType: "image/png" });
