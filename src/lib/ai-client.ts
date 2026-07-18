@@ -6,10 +6,12 @@ import { isAcceptedImageType, isPdf } from "@/lib/carte-grise-fields";
 // --- Choix du fournisseur IA ------------------------------------------------
 //
 // Par défaut : Claude (Anthropic). Si LOCAL_AI_BASE_URL est renseigné dans le
-// `.env`, les fonctions vision/texte appellent une IA locale compatible OpenAI
-// (Ollama, LM Studio…) au lieu de Claude. Les fonctions de RECHERCHE WEB
-// (base de connaissances, procédure de réinitialisation) restent sur Claude :
-// aucune IA locale ne fournit l'outil de recherche web.
+// `.env`, TOUTES les fonctions IA (vision/texte, base de connaissances,
+// procédure de réinitialisation) appellent une IA locale compatible OpenAI
+// (Ollama, LM Studio…) au lieu de Claude. Nuance : avec Claude, la base de
+// connaissances et la réinit utilisent la RECHERCHE WEB (sources à l'appui) ;
+// avec une IA locale (sans accès web), la réponse provient des connaissances
+// du modèle. Les PDF sont rasterisés en image pour l'IA locale (pdftoppm).
 //
 // Variables .env :
 //   LOCAL_AI_BASE_URL   ex. http://192.168.1.50:11434/v1   (Ollama, avec /v1)
