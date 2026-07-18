@@ -78,7 +78,7 @@ export async function extractInspection(
 
   const client = new Anthropic();
   const message = await client.messages.create({
-    model: "claude-opus-4-8",
+    model: "claude-haiku-4-5",
     max_tokens: 4096,
     messages: [
       {

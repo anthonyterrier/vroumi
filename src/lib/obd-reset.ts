@@ -74,9 +74,9 @@ Si tu ne trouves pas de procédure fiable pour ce véhicule précis, mets "found
 
   const client = new Anthropic();
   const message = await client.messages.create({
-    model: "claude-opus-4-8",
+    model: "claude-haiku-4-5",
     max_tokens: 3000,
-    tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 5 }],
+    tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
     messages: [{ role: "user", content: prompt }],
   });
 

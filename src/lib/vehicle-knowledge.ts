@@ -82,9 +82,9 @@ N'invente PAS de commandes : ne mets dans obdCommands que ce qui est réellement
 
   const client = new Anthropic();
   const message = await client.messages.create({
-    model: "claude-opus-4-8",
+    model: "claude-haiku-4-5",
     max_tokens: 4000,
-    tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 6 }],
+    tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 6 }],
     messages: [{ role: "user", content: prompt }],
   });
 
