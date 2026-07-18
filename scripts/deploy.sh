@@ -63,14 +63,23 @@ fi
 # Applique les évolutions de schéma (nouvelles tables/colonnes).
 npx prisma db push --skip-generate --accept-data-loss
 
-# Build PROPRE : on repart d'un .next vide. Un build incrémental peut laisser du
-# HTML référençant le hash d'un asset (ex. CSS) d'un build précédent : cet asset
-# n'existant plus, il renvoie 400/404 et toute la page perd son style.
-rm -rf .next
+# Build PROPRE mais SÛR : on met l'ancien build de côté (au lieu de le
+# supprimer). `next build` repart donc d'un .next vide (évite le HTML qui
+# référence le hash d'un asset d'un build précédent → 400/404 et perte de
+# style), MAIS si le build échoue on RESTAURE l'ancien build : le site ne tombe
+# jamais faute de .next (c'est ce qui avait provoqué une boucle de redémarrage).
+rm -rf .next.bak
+[ -d .next ] && mv .next .next.bak
 
-# Build (prisma generate + next build). `set -e` stoppe ici en cas d'échec,
-# donc le service n'est pas redémarré.
-npm run build
+# `if` neutralise `set -e` sur la condition : on peut gérer l'échec nous-mêmes.
+if npm run build; then
+  rm -rf .next.bak
+else
+  echo "$(date '+%F %T') build ÉCHOUÉ : restauration de l'ancien build, service inchangé"
+  rm -rf .next
+  [ -d .next.bak ] && mv .next.bak .next
+  exit 1
+fi
 
 sudo systemctl restart "$SERVICE"
 echo "$(date '+%F %T') déploiement terminé : ${REMOTE:0:7}"
