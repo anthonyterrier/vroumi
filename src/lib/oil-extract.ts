@@ -1,15 +1,12 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
+import { aiComplete, AI_ENABLED } from "@/lib/ai-client";
 import {
   OilExtractionSchema,
   type OilExtraction,
 } from "@/lib/oil-extract-fields";
-import { isAcceptedImageType, isPdf } from "@/lib/carte-grise-fields";
 
-/** L'analyse IA n'est disponible que si une clé API Anthropic est configurée. */
-export const OIL_AI_ENABLED = !!process.env.ANTHROPIC_API_KEY;
-
-type ImageMediaType = "image/jpeg" | "image/png" | "image/webp";
+/** L'analyse IA n'est disponible que si un fournisseur (local ou Claude) existe. */
+export const OIL_AI_ENABLED = AI_ENABLED;
 
 const PROMPT = `Tu analyses une photo : soit une FACTURE / DEVIS d'entretien automobile (repère la ligne d'huile moteur), soit une PHOTO D'UN BIDON d'huile moteur. Extrait les caractéristiques de l'HUILE MOTEUR et réponds UNIQUEMENT avec un objet JSON (pas de texte, pas de markdown, pas de \`\`\`) :
 {
@@ -37,28 +34,9 @@ function extractJsonObject(text: string): unknown {
   }
 }
 
-function toBlock(file: Buffer, mimeType: string): Anthropic.ContentBlockParam {
-  const data = file.toString("base64");
-  return isPdf(mimeType)
-    ? {
-        type: "document",
-        source: { type: "base64", media_type: "application/pdf", data },
-      }
-    : {
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: isAcceptedImageType(mimeType)
-            ? (mimeType as ImageMediaType)
-            : "image/jpeg",
-          data,
-        },
-      };
-}
-
 /**
  * Extrait les caractéristiques de l'huile (marque, viscosité, normes, quantité)
- * depuis une photo de facture ou de bidon. Lève si la clé API est absente.
+ * depuis une photo de facture ou de bidon. Lève si l'IA n'est pas configurée.
  */
 export async function extractOilInfo(
   file: Buffer,
@@ -68,23 +46,11 @@ export async function extractOilInfo(
     throw new Error("Analyse IA non configurée (clé API manquante).");
   }
 
-  const client = new Anthropic();
-  const message = await client.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 1024,
-    messages: [
-      {
-        role: "user",
-        content: [toBlock(file, mimeType), { type: "text", text: PROMPT }],
-      },
-    ],
+  const text = await aiComplete({
+    prompt: PROMPT,
+    files: [{ buffer: file, mimeType }],
+    maxTokens: 1024,
   });
-
-  const text = message.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("")
-    .trim();
 
   const parsed = extractJsonObject(text);
   const result = OilExtractionSchema.safeParse(parsed);

@@ -1,17 +1,13 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
+import { aiComplete, AI_ENABLED } from "@/lib/ai-client";
 import {
   ExtractionSchema,
   EMPTY_FIELDS,
-  isAcceptedImageType,
-  isPdf,
   type CarteGriseFields,
 } from "@/lib/carte-grise-fields";
 
-/** L'analyse IA n'est disponible que si une clé API Anthropic est configurée. */
-export const CARTE_GRISE_AI_ENABLED = !!process.env.ANTHROPIC_API_KEY;
-
-type ImageMediaType = "image/jpeg" | "image/png" | "image/webp";
+/** L'analyse IA n'est disponible que si un fournisseur (local ou Claude) existe. */
+export const CARTE_GRISE_AI_ENABLED = AI_ENABLED;
 
 // NB : on n'utilise PAS les "structured outputs" (output_config.format) — ils
 // sont limités à 16 paramètres de type union/nullable, or on a 24 champs tous
@@ -74,43 +70,11 @@ export async function extractCarteGrise(
   if (!CARTE_GRISE_AI_ENABLED) {
     throw new Error("Analyse IA non configurée (clé API manquante).");
   }
-  const data = file.toString("base64");
-
-  // PDF → bloc "document" ; image → bloc "image". Le bloc est placé avant le
-  // texte (recommandation API pour les documents).
-  const sourceBlock: Anthropic.ContentBlockParam = isPdf(mimeType)
-    ? {
-        type: "document",
-        source: { type: "base64", media_type: "application/pdf", data },
-      }
-    : {
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: isAcceptedImageType(mimeType)
-            ? (mimeType as ImageMediaType)
-            : "image/jpeg",
-          data,
-        },
-      };
-
-  const client = new Anthropic();
-  const message = await client.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 2048,
-    messages: [
-      {
-        role: "user",
-        content: [sourceBlock, { type: "text", text: PROMPT }],
-      },
-    ],
+  const text = await aiComplete({
+    prompt: PROMPT,
+    files: [{ buffer: file, mimeType }],
+    maxTokens: 2048,
   });
-
-  const text = message.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("")
-    .trim();
 
   const parsed = extractJsonObject(text);
   if (parsed == null) return EMPTY_FIELDS;

@@ -1,16 +1,13 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
+import { aiComplete, AI_ENABLED } from "@/lib/ai-client";
 import {
   InvoiceExtractionSchema,
   type InvoiceExtraction,
 } from "@/lib/maintenance-invoice-fields";
 import { MAINTENANCE_TYPE_LABELS } from "@/lib/labels";
-import { isAcceptedImageType, isPdf } from "@/lib/carte-grise-fields";
 
-/** L'analyse IA n'est disponible que si une clé API Anthropic est configurée. */
-export const INVOICE_AI_ENABLED = !!process.env.ANTHROPIC_API_KEY;
-
-type ImageMediaType = "image/jpeg" | "image/png" | "image/webp";
+/** L'analyse IA n'est disponible que si un fournisseur (local ou Claude) existe. */
+export const INVOICE_AI_ENABLED = AI_ENABLED;
 
 // Liste des types acceptés (clé = valeur d'enum, + libellé) pour guider l'IA.
 const TYPE_LIST = Object.entries(MAINTENANCE_TYPE_LABELS)
@@ -47,28 +44,9 @@ function extractJsonObject(text: string): unknown {
   }
 }
 
-function toBlock(file: Buffer, mimeType: string): Anthropic.ContentBlockParam {
-  const data = file.toString("base64");
-  return isPdf(mimeType)
-    ? {
-        type: "document",
-        source: { type: "base64", media_type: "application/pdf", data },
-      }
-    : {
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: isAcceptedImageType(mimeType)
-            ? (mimeType as ImageMediaType)
-            : "image/jpeg",
-          data,
-        },
-      };
-}
-
 /**
  * Extrait les informations d'une facture d'entretien (image ou PDF) : date,
- * kilométrage, coût, garage, types d'opérations. Lève si la clé API est absente.
+ * kilométrage, coût, garage, types d'opérations. Lève si l'IA n'est pas configurée.
  */
 export async function extractMaintenanceInvoice(
   file: Buffer,
@@ -78,23 +56,11 @@ export async function extractMaintenanceInvoice(
     throw new Error("Analyse IA non configurée (clé API manquante).");
   }
 
-  const client = new Anthropic();
-  const message = await client.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 2048,
-    messages: [
-      {
-        role: "user",
-        content: [toBlock(file, mimeType), { type: "text", text: PROMPT }],
-      },
-    ],
+  const text = await aiComplete({
+    prompt: PROMPT,
+    files: [{ buffer: file, mimeType }],
+    maxTokens: 2048,
   });
-
-  const text = message.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("")
-    .trim();
 
   const parsed = extractJsonObject(text);
   const result = InvoiceExtractionSchema.safeParse(parsed);

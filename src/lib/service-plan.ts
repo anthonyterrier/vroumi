@@ -1,15 +1,12 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
+import { aiComplete, AI_ENABLED } from "@/lib/ai-client";
 import {
   ServicePlanSchema,
   type ServicePlanItem,
 } from "@/lib/service-plan-fields";
-import { isAcceptedImageType, isPdf } from "@/lib/carte-grise-fields";
 
-/** L'analyse IA n'est disponible que si une clé API Anthropic est configurée. */
-export const SERVICE_PLAN_AI_ENABLED = !!process.env.ANTHROPIC_API_KEY;
-
-type ImageMediaType = "image/jpeg" | "image/png" | "image/webp";
+/** L'analyse IA n'est disponible que si un fournisseur (local ou Claude) existe. */
+export const SERVICE_PLAN_AI_ENABLED = AI_ENABLED;
 
 const PROMPT = `Tu analyses le « programme / plan d'entretien » du carnet d'entretien d'un véhicule (constructeur), fourni sur une ou PLUSIEURS pages (images ou PDF). Considère l'ensemble des pages comme un seul document.
 Liste CHAQUE opération d'entretien avec sa périodicité, en fusionnant les pages et sans doublon. Réponds UNIQUEMENT avec un tableau JSON (pas de texte, pas de markdown, pas de \`\`\`), où chaque élément est un objet :
@@ -36,25 +33,6 @@ function extractJsonArray(text: string): unknown {
   }
 }
 
-function toBlock(file: Buffer, mimeType: string): Anthropic.ContentBlockParam {
-  const data = file.toString("base64");
-  return isPdf(mimeType)
-    ? {
-        type: "document",
-        source: { type: "base64", media_type: "application/pdf", data },
-      }
-    : {
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: isAcceptedImageType(mimeType)
-            ? (mimeType as ImageMediaType)
-            : "image/jpeg",
-          data,
-        },
-      };
-}
-
 /**
  * Extrait les intervalles d'entretien d'une ou plusieurs pages/photos du carnet
  * constructeur (analysées ensemble). Lève si la clé API est absente.
@@ -67,25 +45,11 @@ export async function extractServicePlan(
   }
   if (docs.length === 0) return [];
 
-  const sourceBlocks = docs.map((d) => toBlock(d.data, d.mimeType));
-
-  const client = new Anthropic();
-  const message = await client.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 4096,
-    messages: [
-      {
-        role: "user",
-        content: [...sourceBlocks, { type: "text", text: PROMPT }],
-      },
-    ],
+  const text = await aiComplete({
+    prompt: PROMPT,
+    files: docs.map((d) => ({ buffer: d.data, mimeType: d.mimeType })),
+    maxTokens: 4096,
   });
-
-  const text = message.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("")
-    .trim();
 
   const parsed = extractJsonArray(text);
   if (!Array.isArray(parsed)) return [];
