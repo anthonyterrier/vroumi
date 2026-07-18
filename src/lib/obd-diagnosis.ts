@@ -1,13 +1,13 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
+import { aiComplete, AI_ENABLED } from "@/lib/ai-client";
 import {
   ObdDiagnosisSchema,
   type ObdDiagnosis,
   type ObdSnapshot,
 } from "@/lib/obd-diagnosis-fields";
 
-/** L'aide au diagnostic IA n'est dispo que si une clé API Anthropic existe. */
-export const OBD_AI_ENABLED = !!process.env.ANTHROPIC_API_KEY;
+/** L'aide au diagnostic IA est dispo si un fournisseur (local ou Claude) existe. */
+export const OBD_AI_ENABLED = AI_ENABLED;
 
 type VehicleInfo = {
   name: string;
@@ -112,18 +112,7 @@ Réponds UNIQUEMENT avec un objet JSON (pas de texte autour, pas de markdown) :
 }
 Croise les codes ET les valeurs (ex. corrections de richesse, sondes O2, températures) pour hiérarchiser les causes. Sois concret et pédagogue, en français. Rappelle si nécessaire que c'est indicatif et ne remplace pas un diagnostic professionnel.`;
 
-  const client = new Anthropic();
-  const message = await client.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 2048,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  const text = message.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("")
-    .trim();
+  const text = await aiComplete({ prompt, maxTokens: 2048 });
 
   const parsed = extractJsonObject(text);
   const result = ObdDiagnosisSchema.safeParse(parsed);

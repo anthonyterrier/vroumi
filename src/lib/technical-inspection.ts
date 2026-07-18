@@ -1,15 +1,12 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
+import { aiComplete, AI_ENABLED } from "@/lib/ai-client";
 import {
   InspectionExtractionSchema,
   type InspectionExtraction,
 } from "@/lib/technical-inspection-fields";
-import { isAcceptedImageType, isPdf } from "@/lib/carte-grise-fields";
 
-/** L'analyse IA n'est disponible que si une clé API Anthropic est configurée. */
-export const INSPECTION_AI_ENABLED = !!process.env.ANTHROPIC_API_KEY;
-
-type ImageMediaType = "image/jpeg" | "image/png" | "image/webp";
+/** L'analyse IA n'est disponible que si un fournisseur (local ou Claude) existe. */
+export const INSPECTION_AI_ENABLED = AI_ENABLED;
 
 const PROMPT = `Tu analyses le COMPTE RENDU d'un CONTRÔLE TECHNIQUE automobile français (procès-verbal). Extrait les informations et réponds UNIQUEMENT avec un objet JSON (pas de texte, pas de markdown, pas de \`\`\`) de la forme :
 {
@@ -44,29 +41,10 @@ function extractJsonObject(text: string): unknown {
   }
 }
 
-function toBlock(file: Buffer, mimeType: string): Anthropic.ContentBlockParam {
-  const data = file.toString("base64");
-  return isPdf(mimeType)
-    ? {
-        type: "document",
-        source: { type: "base64", media_type: "application/pdf", data },
-      }
-    : {
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: isAcceptedImageType(mimeType)
-            ? (mimeType as ImageMediaType)
-            : "image/jpeg",
-          data,
-        },
-      };
-}
-
 /**
  * Extrait les informations d'un compte rendu de contrôle technique (image ou
  * PDF) : date, résultat, kilométrage, centre, échéance et liste des
- * défaillances. Lève si la clé API est absente.
+ * défaillances. Lève si l'IA n'est pas configurée.
  */
 export async function extractInspection(
   file: Buffer,
@@ -76,23 +54,11 @@ export async function extractInspection(
     throw new Error("Analyse IA non configurée (clé API manquante).");
   }
 
-  const client = new Anthropic();
-  const message = await client.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 4096,
-    messages: [
-      {
-        role: "user",
-        content: [toBlock(file, mimeType), { type: "text", text: PROMPT }],
-      },
-    ],
+  const text = await aiComplete({
+    prompt: PROMPT,
+    files: [{ buffer: file, mimeType }],
+    maxTokens: 4096,
   });
-
-  const text = message.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("")
-    .trim();
 
   const parsed = extractJsonObject(text);
   const result = InspectionExtractionSchema.safeParse(parsed);
